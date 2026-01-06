@@ -8,6 +8,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import tech.flowcatalyst.platform.authentication.JwtKeyService;
+import tech.flowcatalyst.platform.authorization.RoleService;
 import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.PrincipalType;
 import tech.flowcatalyst.platform.principal.UserService;
@@ -38,6 +39,9 @@ class ClientAdminResourceTest {
     @Inject
     JwtKeyService jwtKeyService;
 
+    @Inject
+    RoleService roleService;
+
     private String adminToken;
     private Principal adminUser;
 
@@ -52,6 +56,8 @@ class ClientAdminResourceTest {
                 null,
                 UserScope.ANCHOR
             );
+            // Assign the platform:platform-admin role to the user in the database
+            roleService.assignRole(adminUser.id, "platform:platform-admin", "TEST");
         } catch (Exception e) {
             // User might already exist in another test
             adminUser = userService.findByEmail("admin-client-test@test.com").orElse(null);
@@ -60,7 +66,7 @@ class ClientAdminResourceTest {
             }
         }
 
-        adminToken = jwtKeyService.issueSessionToken(adminUser.id, adminUser.userIdentity.email, Set.of("platform:admin"), List.of("*"));
+        adminToken = jwtKeyService.issueSessionToken(adminUser.id, adminUser.userIdentity.email, Set.of("platform:platform-admin"), List.of("*"));
     }
 
     // ==================== List Clients ====================
@@ -72,7 +78,7 @@ class ClientAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/platform/clients")
+            .get("/api/admin/clients")
         .then()
             .statusCode(200)
             .body("clients", notNullValue())
@@ -85,7 +91,7 @@ class ClientAdminResourceTest {
         given()
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/platform/clients")
+            .get("/api/admin/clients")
         .then()
             .statusCode(401);
     }
@@ -107,7 +113,7 @@ class ClientAdminResourceTest {
                 }
                 """.formatted(uniqueId, uniqueId))
         .when()
-            .post("/api/admin/platform/clients")
+            .post("/api/admin/clients")
         .then()
             .statusCode(201)
             .body("id", notNullValue())
@@ -135,7 +141,7 @@ class ClientAdminResourceTest {
                 }
                 """.formatted(uniqueId))
         .when()
-            .post("/api/admin/platform/clients")
+            .post("/api/admin/clients")
         .then()
             .statusCode(400)
             .body("error", containsString("already exists"));
@@ -154,7 +160,7 @@ class ClientAdminResourceTest {
                 }
                 """)
         .when()
-            .post("/api/admin/platform/clients")
+            .post("/api/admin/clients")
         .then()
             .statusCode(400);
     }
@@ -171,7 +177,7 @@ class ClientAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/platform/clients/" + client.id)
+            .get("/api/admin/clients/" + client.id)
         .then()
             .statusCode(200)
             .body("id", equalTo(client.id))
@@ -186,7 +192,7 @@ class ClientAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/platform/clients/999999999")
+            .get("/api/admin/clients/999999999")
         .then()
             .statusCode(404);
     }
@@ -208,7 +214,7 @@ class ClientAdminResourceTest {
                 }
                 """)
         .when()
-            .put("/api/admin/platform/clients/" + client.id)
+            .put("/api/admin/clients/" + client.id)
         .then()
             .statusCode(200)
             .body("name", equalTo("Updated Name"));
@@ -231,7 +237,7 @@ class ClientAdminResourceTest {
                 }
                 """)
         .when()
-            .post("/api/admin/platform/clients/" + client.id + "/suspend")
+            .post("/api/admin/clients/" + client.id + "/suspend")
         .then()
             .statusCode(200)
             .body("message", equalTo("Client suspended"));
@@ -241,7 +247,7 @@ class ClientAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/platform/clients/" + client.id)
+            .get("/api/admin/clients/" + client.id)
         .then()
             .statusCode(200)
             .body("status", equalTo("SUSPENDED"));
@@ -258,7 +264,7 @@ class ClientAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .post("/api/admin/platform/clients/" + client.id + "/activate")
+            .post("/api/admin/clients/" + client.id + "/activate")
         .then()
             .statusCode(200)
             .body("message", equalTo("Client activated"));
@@ -279,7 +285,7 @@ class ClientAdminResourceTest {
                 }
                 """)
         .when()
-            .post("/api/admin/platform/clients/" + client.id + "/deactivate")
+            .post("/api/admin/clients/" + client.id + "/deactivate")
         .then()
             .statusCode(200)
             .body("message", equalTo("Client deactivated"));
@@ -303,7 +309,7 @@ class ClientAdminResourceTest {
                 }
                 """)
         .when()
-            .post("/api/admin/platform/clients/" + client.id + "/notes")
+            .post("/api/admin/clients/" + client.id + "/notes")
         .then()
             .statusCode(201)
             .body("message", equalTo("Note added"));
@@ -321,7 +327,7 @@ class ClientAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/platform/clients/by-identifier/identifier-test-" + uniqueId)
+            .get("/api/admin/clients/by-identifier/identifier-test-" + uniqueId)
         .then()
             .statusCode(200)
             .body("id", equalTo(client.id))

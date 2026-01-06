@@ -58,7 +58,10 @@ class PrincipalAdminResourceTest {
             null, UserScope.ANCHOR
         );
 
-        adminToken = jwtKeyService.issueSessionToken(adminUser.id, adminUser.userIdentity.email, Set.of("platform:admin"), List.of("*"));
+        // Assign the platform:platform-admin role to the user in the database
+        roleService.assignRole(adminUser.id, "platform:platform-admin", "TEST");
+
+        adminToken = jwtKeyService.issueSessionToken(adminUser.id, adminUser.userIdentity.email, Set.of("platform:platform-admin"), List.of("*"));
     }
 
     // ==================== List Principals ====================
@@ -70,7 +73,7 @@ class PrincipalAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/platform/principals")
+            .get("/api/admin/principals")
         .then()
             .statusCode(200)
             .body("principals", notNullValue())
@@ -94,7 +97,7 @@ class PrincipalAdminResourceTest {
             .contentType(ContentType.JSON)
             .queryParam("clientId", testClient.id)
         .when()
-            .get("/api/admin/platform/principals")
+            .get("/api/admin/principals")
         .then()
             .statusCode(200)
             .body("principals.size()", greaterThanOrEqualTo(1))
@@ -107,7 +110,7 @@ class PrincipalAdminResourceTest {
         given()
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/platform/principals")
+            .get("/api/admin/principals")
         .then()
             .statusCode(401);
     }
@@ -127,11 +130,11 @@ class PrincipalAdminResourceTest {
                     "email": "newuser-%s@test.com",
                     "password": "SecurePass123!",
                     "name": "New User",
-                    "clientId": %d
+                    "clientId": "%s"
                 }
                 """.formatted(uniqueId, testClient.id))
         .when()
-            .post("/api/admin/platform/principals/users")
+            .post("/api/admin/principals/users")
         .then()
             .statusCode(201)
             .body("id", notNullValue())
@@ -159,14 +162,14 @@ class PrincipalAdminResourceTest {
                     "email": "%s",
                     "password": "SecurePass123!",
                     "name": "Second User",
-                    "clientId": %d
+                    "clientId": "%s"
                 }
                 """.formatted(email, testClient.id))
         .when()
-            .post("/api/admin/platform/principals/users")
+            .post("/api/admin/principals/users")
         .then()
-            .statusCode(400)
-            .body("error", containsString("already exists"));
+            .statusCode(409)
+            .body("message", containsString("already exists"));
     }
 
     // ==================== Get Principal ====================
@@ -178,7 +181,7 @@ class PrincipalAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/platform/principals/" + adminUser.id)
+            .get("/api/admin/principals/" + adminUser.id)
         .then()
             .statusCode(200)
             .body("id", equalTo(adminUser.id))
@@ -194,7 +197,7 @@ class PrincipalAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/platform/principals/999999999")
+            .get("/api/admin/principals/999999999")
         .then()
             .statusCode(404);
     }
@@ -221,7 +224,7 @@ class PrincipalAdminResourceTest {
                 }
                 """)
         .when()
-            .put("/api/admin/platform/principals/" + user.id)
+            .put("/api/admin/principals/" + user.id)
         .then()
             .statusCode(200)
             .body("name", equalTo("Updated Name"));
@@ -244,7 +247,7 @@ class PrincipalAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .post("/api/admin/platform/principals/" + user.id + "/deactivate")
+            .post("/api/admin/principals/" + user.id + "/deactivate")
         .then()
             .statusCode(200)
             .body("message", equalTo("Principal deactivated"));
@@ -254,7 +257,7 @@ class PrincipalAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/platform/principals/" + user.id)
+            .get("/api/admin/principals/" + user.id)
         .then()
             .statusCode(200)
             .body("active", equalTo(false));
@@ -276,7 +279,7 @@ class PrincipalAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .post("/api/admin/platform/principals/" + user.id + "/activate")
+            .post("/api/admin/principals/" + user.id + "/activate")
         .then()
             .statusCode(200)
             .body("message", equalTo("Principal activated"));
@@ -304,7 +307,7 @@ class PrincipalAdminResourceTest {
                 }
                 """)
         .when()
-            .post("/api/admin/platform/principals/" + user.id + "/reset-password")
+            .post("/api/admin/principals/" + user.id + "/reset-password")
         .then()
             .statusCode(200)
             .body("message", equalTo("Password reset successfully"));
@@ -327,7 +330,7 @@ class PrincipalAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/platform/principals/" + user.id + "/roles")
+            .get("/api/admin/principals/" + user.id + "/roles")
         .then()
             .statusCode(200)
             .body("roles", hasSize(0));
@@ -349,14 +352,14 @@ class PrincipalAdminResourceTest {
             .contentType(ContentType.JSON)
             .body("""
                 {
-                    "roleName": "platform:client-admin"
+                    "roleName": "platform:test-client-admin"
                 }
                 """)
         .when()
-            .post("/api/admin/platform/principals/" + user.id + "/roles")
+            .post("/api/admin/principals/" + user.id + "/roles")
         .then()
             .statusCode(201)
-            .body("roleName", equalTo("platform:client-admin"))
+            .body("roleName", equalTo("platform:test-client-admin"))
             .body("assignmentSource", equalTo("MANUAL"));
     }
 
@@ -380,10 +383,10 @@ class PrincipalAdminResourceTest {
                 }
                 """)
         .when()
-            .post("/api/admin/platform/principals/" + user.id + "/roles")
+            .post("/api/admin/principals/" + user.id + "/roles")
         .then()
             .statusCode(400)
-            .body("error", containsString("not defined"));
+            .body("message", containsString("not defined"));
     }
 
     @Test
@@ -398,14 +401,14 @@ class PrincipalAdminResourceTest {
         );
 
         // First assign the role
-        roleService.assignRole(user.id, "platform:client-admin", "MANUAL");
+        roleService.assignRole(user.id, "platform:test-client-admin", "MANUAL");
 
         // Then remove it
         given()
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .delete("/api/admin/platform/principals/" + user.id + "/roles/platform:client-admin")
+            .delete("/api/admin/principals/" + user.id + "/roles/platform:test-client-admin")
         .then()
             .statusCode(204);
     }
@@ -428,7 +431,7 @@ class PrincipalAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/platform/principals/" + user.id + "/client-access")
+            .get("/api/admin/principals/" + user.id + "/client-access")
         .then()
             .statusCode(200)
             .body("grants", hasSize(0));
@@ -451,11 +454,11 @@ class PrincipalAdminResourceTest {
             .contentType(ContentType.JSON)
             .body("""
                 {
-                    "clientId": %d
+                    "clientId": "%s"
                 }
                 """.formatted(testClient.id))
         .when()
-            .post("/api/admin/platform/principals/" + partnerUser.id + "/client-access")
+            .post("/api/admin/principals/" + partnerUser.id + "/client-access")
         .then()
             .statusCode(201)
             .body("clientId", equalTo(testClient.id));
@@ -480,7 +483,7 @@ class PrincipalAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .delete("/api/admin/platform/principals/" + partnerUser.id + "/client-access/" + testClient.id)
+            .delete("/api/admin/principals/" + partnerUser.id + "/client-access/" + testClient.id)
         .then()
             .statusCode(204);
     }

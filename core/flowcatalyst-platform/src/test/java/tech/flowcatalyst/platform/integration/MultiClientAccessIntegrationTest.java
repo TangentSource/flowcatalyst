@@ -161,7 +161,7 @@ class MultiClientAccessIntegrationTest {
             "SecurePass123!",
             "Partner User",
             null,
-            UserScope.ANCHOR
+            UserScope.PARTNER
         );
 
         // Act
@@ -188,7 +188,7 @@ class MultiClientAccessIntegrationTest {
             uniqueEmail("partner"),
             "SecurePass123!",
             "Logistics Partner",
-            null, UserScope.ANCHOR
+            null, UserScope.PARTNER
         );
 
         // Grant access to customers A and B (not C)
@@ -243,7 +243,7 @@ class MultiClientAccessIntegrationTest {
             uniqueEmail("partner"),
             "SecurePass123!",
             "Partner",
-            null, UserScope.ANCHOR
+            null, UserScope.PARTNER
         );
 
         // Grant access
@@ -296,7 +296,7 @@ class MultiClientAccessIntegrationTest {
             uniqueEmail("partner"),
             "SecurePass123!",
             "Partner",
-            null, UserScope.ANCHOR
+            null, UserScope.PARTNER
         );
 
         // First grant
@@ -318,7 +318,7 @@ class MultiClientAccessIntegrationTest {
             uniqueEmail("partner"),
             "SecurePass123!",
             "Partner",
-            null, UserScope.ANCHOR
+            null, UserScope.PARTNER
         );
 
         // Act & Assert: Revoke without grant
@@ -412,7 +412,7 @@ class MultiClientAccessIntegrationTest {
             uniqueEmail("partner"),
             "SecurePass123!",
             "Logistics Partner",
-            null, UserScope.ANCHOR
+            null, UserScope.PARTNER
         );
 
         clientService.grantClientAccess(partner.id, customer1.id);
@@ -448,7 +448,7 @@ class MultiClientAccessIntegrationTest {
             uniqueEmail("partner"),
             "SecurePass123!",
             "Partner",
-            null, UserScope.ANCHOR
+            null, UserScope.PARTNER
         );
 
         clientService.grantClientAccess(partner.id, active.id);

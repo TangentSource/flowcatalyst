@@ -1,8 +1,9 @@
 package tech.flowcatalyst.platform.audit;
 
-import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.NotAuthorizedException;
+import jakarta.ws.rs.core.Response;
 import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.PrincipalRepository;
 import tech.flowcatalyst.platform.principal.PrincipalType;
@@ -68,10 +69,16 @@ public class AuditContext {
     /**
      * Get the current principal ID, throwing if not set.
      * Use this when audit context is required.
+     * Throws NotAuthorizedException (401) if not authenticated.
      */
     public String requirePrincipalId() {
         if (principalId == null) {
-            throw new IllegalStateException("Audit context not set - operation rejected");
+            throw new NotAuthorizedException(
+                Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("{\"error\":\"Authentication required\"}")
+                    .type("application/json")
+                    .build()
+            );
         }
         return principalId;
     }

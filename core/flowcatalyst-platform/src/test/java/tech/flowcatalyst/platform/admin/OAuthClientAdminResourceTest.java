@@ -13,6 +13,7 @@ import tech.flowcatalyst.platform.authentication.JwtKeyService;
 import tech.flowcatalyst.platform.authentication.oauth.OAuthClient;
 import tech.flowcatalyst.platform.authentication.oauth.OAuthClient.ClientType;
 import tech.flowcatalyst.platform.authentication.oauth.OAuthClientRepository;
+import tech.flowcatalyst.platform.authorization.RoleService;
 import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.UserService;
 import tech.flowcatalyst.platform.principal.UserScope;
@@ -40,6 +41,9 @@ class OAuthClientAdminResourceTest {
     @Inject
     JwtKeyService jwtKeyService;
 
+    @Inject
+    RoleService roleService;
+
     private String adminToken;
 
     @BeforeEach
@@ -53,7 +57,10 @@ class OAuthClientAdminResourceTest {
             null, UserScope.ANCHOR
         );
 
-        adminToken = jwtKeyService.issueSessionToken(adminUser.id, adminUser.userIdentity.email, Set.of("platform:admin"), List.of("*"));
+        // Assign the platform:platform-admin role to the user in the database
+        roleService.assignRole(adminUser.id, "platform:platform-admin", "TEST");
+
+        adminToken = jwtKeyService.issueSessionToken(adminUser.id, adminUser.userIdentity.email, Set.of("platform:platform-admin"), List.of("*"));
     }
 
     // ==================== List Clients ====================
@@ -65,7 +72,7 @@ class OAuthClientAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/platform/oauth-clients")
+            .get("/api/admin/oauth-clients")
         .then()
             .statusCode(200)
             .body("clients", notNullValue())
@@ -78,7 +85,7 @@ class OAuthClientAdminResourceTest {
         given()
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/platform/oauth-clients")
+            .get("/api/admin/oauth-clients")
         .then()
             .statusCode(401);
     }
@@ -104,7 +111,7 @@ class OAuthClientAdminResourceTest {
                 }
                 """.formatted(uniqueId))
         .when()
-            .post("/api/admin/platform/oauth-clients")
+            .post("/api/admin/oauth-clients")
         .then()
             .statusCode(201)
             .body("client.id", notNullValue())
@@ -136,7 +143,7 @@ class OAuthClientAdminResourceTest {
                 }
                 """.formatted(uniqueId))
         .when()
-            .post("/api/admin/platform/oauth-clients")
+            .post("/api/admin/oauth-clients")
         .then()
             .statusCode(201)
             .body("client.id", notNullValue())
@@ -162,7 +169,7 @@ class OAuthClientAdminResourceTest {
                 }
                 """)
         .when()
-            .post("/api/admin/platform/oauth-clients")
+            .post("/api/admin/oauth-clients")
         .then()
             .statusCode(400);
     }
@@ -179,7 +186,7 @@ class OAuthClientAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/platform/oauth-clients/" + client.id)
+            .get("/api/admin/oauth-clients/" + client.id)
         .then()
             .statusCode(200)
             .body("id", equalTo(client.id))
@@ -194,7 +201,7 @@ class OAuthClientAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/platform/oauth-clients/999999999")
+            .get("/api/admin/oauth-clients/999999999")
         .then()
             .statusCode(404);
     }
@@ -208,7 +215,7 @@ class OAuthClientAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/platform/oauth-clients/by-client-id/" + client.clientId)
+            .get("/api/admin/oauth-clients/by-client-id/" + client.clientId)
         .then()
             .statusCode(200)
             .body("clientId", equalTo(client.clientId));
@@ -231,7 +238,7 @@ class OAuthClientAdminResourceTest {
                 }
                 """)
         .when()
-            .put("/api/admin/platform/oauth-clients/" + client.id)
+            .put("/api/admin/oauth-clients/" + client.id)
         .then()
             .statusCode(200)
             .body("clientName", equalTo("Updated Client Name"))
@@ -249,7 +256,7 @@ class OAuthClientAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .post("/api/admin/platform/oauth-clients/" + client.id + "/rotate-secret")
+            .post("/api/admin/oauth-clients/" + client.id + "/rotate-secret")
         .then()
             .statusCode(200)
             .body("clientId", equalTo(client.clientId))
@@ -265,7 +272,7 @@ class OAuthClientAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .post("/api/admin/platform/oauth-clients/" + client.id + "/rotate-secret")
+            .post("/api/admin/oauth-clients/" + client.id + "/rotate-secret")
         .then()
             .statusCode(400)
             .body("error", containsString("public"));
@@ -282,7 +289,7 @@ class OAuthClientAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .post("/api/admin/platform/oauth-clients/" + client.id + "/deactivate")
+            .post("/api/admin/oauth-clients/" + client.id + "/deactivate")
         .then()
             .statusCode(200)
             .body("message", equalTo("Client deactivated"));
@@ -292,7 +299,7 @@ class OAuthClientAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/platform/oauth-clients/" + client.id)
+            .get("/api/admin/oauth-clients/" + client.id)
         .then()
             .statusCode(200)
             .body("active", equalTo(false));
@@ -307,7 +314,7 @@ class OAuthClientAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .post("/api/admin/platform/oauth-clients/" + client.id + "/activate")
+            .post("/api/admin/oauth-clients/" + client.id + "/activate")
         .then()
             .statusCode(200)
             .body("message", equalTo("Client activated"));

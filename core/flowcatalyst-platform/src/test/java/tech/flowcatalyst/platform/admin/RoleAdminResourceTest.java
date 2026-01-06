@@ -8,6 +8,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import tech.flowcatalyst.platform.authentication.JwtKeyService;
+import tech.flowcatalyst.platform.authorization.RoleService;
 import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.UserService;
 import tech.flowcatalyst.platform.principal.UserScope;
@@ -32,6 +33,9 @@ class RoleAdminResourceTest {
     @Inject
     JwtKeyService jwtKeyService;
 
+    @Inject
+    RoleService roleService;
+
     private String adminToken;
 
     @BeforeEach
@@ -45,7 +49,10 @@ class RoleAdminResourceTest {
             null, UserScope.ANCHOR
         );
 
-        adminToken = jwtKeyService.issueSessionToken(adminUser.id, adminUser.userIdentity.email, Set.of("platform:admin"), List.of("*"));
+        // Assign the platform:platform-admin role to the user in the database
+        roleService.assignRole(adminUser.id, "platform:platform-admin", "TEST");
+
+        adminToken = jwtKeyService.issueSessionToken(adminUser.id, adminUser.userIdentity.email, Set.of("platform:platform-admin"), List.of("*"));
     }
 
     // ==================== List Roles ====================
@@ -57,12 +64,12 @@ class RoleAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/platform/roles")
+            .get("/api/admin/roles")
         .then()
             .statusCode(200)
             .body("roles", notNullValue())
             .body("total", greaterThanOrEqualTo(1))
-            .body("roles.role", hasItem("platform:tenant-admin"));
+            .body("roles.name", hasItem("platform:platform-admin"));
     }
 
     @Test
@@ -71,7 +78,7 @@ class RoleAdminResourceTest {
         given()
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/platform/roles")
+            .get("/api/admin/roles")
         .then()
             .statusCode(401);
     }
@@ -85,12 +92,12 @@ class RoleAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/platform/roles/platform:tenant-admin")
+            .get("/api/admin/roles/platform:platform-admin")
         .then()
             .statusCode(200)
-            .body("role", equalTo("platform:tenant-admin"))
-            .body("subdomain", equalTo("platform"))
-            .body("name", equalTo("tenant-admin"))
+            .body("name", equalTo("platform:platform-admin"))
+            .body("applicationCode", equalTo("platform"))
+            .body("shortName", equalTo("platform-admin"))
             .body("permissions", notNullValue())
             .body("permissions.size()", greaterThanOrEqualTo(1));
     }
@@ -102,10 +109,10 @@ class RoleAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/platform/roles/nonexistent:role")
+            .get("/api/admin/roles/nonexistent:role")
         .then()
             .statusCode(404)
-            .body("error", containsString("not found"));
+            .body("message", containsString("not found"));
     }
 
     // ==================== List Permissions ====================
@@ -117,7 +124,7 @@ class RoleAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/platform/roles/permissions")
+            .get("/api/admin/roles/permissions")
         .then()
             .statusCode(200)
             .body("permissions", notNullValue())
@@ -130,7 +137,7 @@ class RoleAdminResourceTest {
         given()
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/platform/roles/permissions")
+            .get("/api/admin/roles/permissions")
         .then()
             .statusCode(401);
     }
@@ -144,12 +151,12 @@ class RoleAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/platform/roles/permissions/platform:tenant:user:create")
+            .get("/api/admin/roles/permissions/platform:iam:user:create")
         .then()
             .statusCode(200)
-            .body("permission", equalTo("platform:tenant:user:create"))
-            .body("subdomain", equalTo("platform"))
-            .body("context", equalTo("tenant"))
+            .body("permission", equalTo("platform:iam:user:create"))
+            .body("application", equalTo("platform"))
+            .body("context", equalTo("iam"))
             .body("aggregate", equalTo("user"))
             .body("action", equalTo("create"));
     }
@@ -161,9 +168,9 @@ class RoleAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/platform/roles/permissions/nonexistent:permission")
+            .get("/api/admin/roles/permissions/nonexistent:permission")
         .then()
             .statusCode(404)
-            .body("error", containsString("not found"));
+            .body("message", containsString("not found"));
     }
 }

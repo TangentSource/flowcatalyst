@@ -421,12 +421,24 @@ public class ApplicationAdminResource {
 
             return switch (result) {
                 case Result.Success<ApplicationEnabledForClient> s -> {
-                    ApplicationClientConfig config = applicationService.getConfigsForApplication(applicationId)
-                        .stream()
-                        .filter(c -> c.clientId.equals(clientId))
-                        .findFirst()
-                        .orElse(null);
-                    yield Response.ok(toClientConfigResponse(config)).build();
+                    // Build response from event data to avoid transaction visibility issues
+                    var event = s.value();
+                    var response = new java.util.HashMap<String, Object>();
+                    response.put("id", event.configId());
+                    response.put("applicationId", event.applicationId());
+                    response.put("clientId", event.clientId());
+                    response.put("clientName", event.clientName());
+                    response.put("clientIdentifier", event.clientIdentifier());
+                    response.put("enabled", true);
+                    response.put("baseUrlOverride", request.baseUrlOverride);
+                    // Compute effective base URL
+                    Application app = applicationRepo.findByIdOptional(applicationId).orElse(null);
+                    String effectiveBaseUrl = (request.baseUrlOverride != null && !request.baseUrlOverride.isBlank())
+                        ? request.baseUrlOverride
+                        : (app != null ? app.defaultBaseUrl : null);
+                    response.put("effectiveBaseUrl", effectiveBaseUrl);
+                    response.put("config", request.config);
+                    yield Response.ok(response).build();
                 }
                 case Result.Failure<ApplicationEnabledForClient> f -> {
                     if (f.error() instanceof UseCaseError.NotFoundError) {
@@ -445,12 +457,21 @@ public class ApplicationAdminResource {
 
             return switch (result) {
                 case Result.Success<ApplicationDisabledForClient> s -> {
-                    ApplicationClientConfig config = applicationService.getConfigsForApplication(applicationId)
-                        .stream()
-                        .filter(c -> c.clientId.equals(clientId))
-                        .findFirst()
-                        .orElse(null);
-                    yield Response.ok(toClientConfigResponse(config)).build();
+                    // Build response from event data to avoid transaction visibility issues
+                    var event = s.value();
+                    var response = new java.util.HashMap<String, Object>();
+                    response.put("id", event.configId());
+                    response.put("applicationId", event.applicationId());
+                    response.put("clientId", event.clientId());
+                    response.put("clientName", event.clientName());
+                    response.put("clientIdentifier", event.clientIdentifier());
+                    response.put("enabled", false);
+                    response.put("baseUrlOverride", null);
+                    // Compute effective base URL from app default
+                    Application app = applicationRepo.findByIdOptional(applicationId).orElse(null);
+                    response.put("effectiveBaseUrl", app != null ? app.defaultBaseUrl : null);
+                    response.put("config", null);
+                    yield Response.ok(response).build();
                 }
                 case Result.Failure<ApplicationDisabledForClient> f -> {
                     if (f.error() instanceof UseCaseError.NotFoundError) {

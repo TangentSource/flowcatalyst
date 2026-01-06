@@ -128,7 +128,7 @@ class ClientIsolationSecurityTest {
             uniqueEmail("partner"),
             "SecurePass123!",
             "Logistics Partner",
-            null, UserScope.ANCHOR
+            null, UserScope.PARTNER
         );
 
         // Grant access
@@ -158,7 +158,7 @@ class ClientIsolationSecurityTest {
             uniqueEmail("partner"),
             "SecurePass123!",
             "Partner",
-            null, UserScope.ANCHOR
+            null, UserScope.PARTNER
         );
 
         // First grant
@@ -298,7 +298,7 @@ class ClientIsolationSecurityTest {
             uniqueEmail("partner"),
             "SecurePass123!",
             "Logistics Partner",
-            null, UserScope.ANCHOR
+            null, UserScope.PARTNER
         );
 
         clientService.grantClientAccess(partner.id, c1.id);
@@ -329,7 +329,7 @@ class ClientIsolationSecurityTest {
             "SecurePass123!",
             "New Partner",
             null,
-            UserScope.ANCHOR
+            UserScope.PARTNER
         );
 
         // Act
@@ -353,7 +353,7 @@ class ClientIsolationSecurityTest {
             uniqueEmail("partner"),
             "SecurePass123!",
             "Partner",
-            null, UserScope.ANCHOR
+            null, UserScope.PARTNER
         );
 
         clientService.grantClientAccess(partner.id, c1.id);

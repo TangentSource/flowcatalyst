@@ -28,7 +28,7 @@ class MongoApplicationClientConfigRepository implements ApplicationClientConfigR
     String database;
 
     private MongoCollection<ApplicationClientConfig> collection() {
-        return mongoClient.getDatabase(database).getCollection("application_client_config", ApplicationClientConfig.class);
+        return mongoClient.getDatabase(database).getCollection("application_client_configs", ApplicationClientConfig.class);
     }
 
     @Override
