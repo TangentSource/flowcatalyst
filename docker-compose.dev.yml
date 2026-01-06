@@ -1,0 +1,40 @@
+# Local development environment for FlowCatalyst
+# Usage: docker compose -f docker-compose.dev.yml up -d
+#
+# Single-node MongoDB Replica Set for Change Streams support
+# Connection string: mongodb://localhost:27017/?replicaSet=rs0&directConnection=true
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: flowcatalyst-mongo
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - flowcatalyst-mongo-data:/data/db
+    healthcheck:
+      test: echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]}) }" | mongosh --quiet
+      interval: 5s
+      timeout: 30s
+      start_period: 10s
+      retries: 30
+
+  # Optional: Mongo Express for database management
+  mongo-express:
+    image: mongo-express:latest
+    container_name: flowcatalyst-mongo-express
+    environment:
+      ME_CONFIG_MONGODB_URL: mongodb://mongo:27017/?directConnection=true
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: admin
+    ports:
+      - "8081:8081"
+    depends_on:
+      - mongo
+    profiles:
+      - tools
+
+volumes:
+  flowcatalyst-mongo-data:
+    name: flowcatalyst-mongo-data
