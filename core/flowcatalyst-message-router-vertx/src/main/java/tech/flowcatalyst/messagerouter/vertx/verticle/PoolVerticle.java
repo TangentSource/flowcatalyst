@@ -40,6 +40,7 @@ public class PoolVerticle extends AbstractVerticle {
     private final Map<String, BlockingQueue<PoolMessage>> groupQueues = new HashMap<>();
     private final Map<String, Boolean> activeGroups = new HashMap<>();
     private final Set<String> failedBatchGroups = new HashSet<>();
+    private final Set<Thread> workerThreads = Collections.synchronizedSet(new HashSet<>());
 
     private Semaphore semaphore;
     private RateLimiter rateLimiter;
@@ -83,6 +84,12 @@ public class PoolVerticle extends AbstractVerticle {
     public void stop() {
         LOG.infof("PoolVerticle [%s] stopping", poolCode);
         running = false;
+
+        // Interrupt all worker threads to unblock queue.poll()
+        for (Thread worker : workerThreads) {
+            worker.interrupt();
+        }
+        workerThreads.clear();
     }
 
     // === MESSAGE HANDLING ===
@@ -130,6 +137,7 @@ public class PoolVerticle extends AbstractVerticle {
 
     private void processGroup(String groupId, BlockingQueue<PoolMessage> queue) {
         LOG.debugf("Group worker started for [%s] in pool [%s]", groupId, poolCode);
+        workerThreads.add(Thread.currentThread());
 
         try {
             while (running) {
@@ -167,6 +175,7 @@ public class PoolVerticle extends AbstractVerticle {
             Thread.currentThread().interrupt();
             LOG.debugf("Group worker [%s] interrupted", groupId);
         } finally {
+            workerThreads.remove(Thread.currentThread());
             activeGroups.remove(groupId);
             LOG.debugf("Group worker [%s] exited", groupId);
         }

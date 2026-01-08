@@ -51,6 +51,14 @@ public class QueueConsumerVerticle extends AbstractVerticle {
         // Blocking SQS client
         this.sqsClient = sqsClientSupplier.get();
 
+        // Register health check handler
+        vertx.eventBus().consumer("consumer." + queueIdentifier + ".health", msg -> {
+            msg.reply(new io.vertx.core.json.JsonObject()
+                    .put("healthy", isHealthy())
+                    .put("lastPollTime", lastPollTime != null ? lastPollTime.toEpochMilli() : 0)
+                    .put("running", running));
+        });
+
         // Start polling in a blocking loop on virtual thread
         vertx.executeBlocking(() -> {
             pollLoop();

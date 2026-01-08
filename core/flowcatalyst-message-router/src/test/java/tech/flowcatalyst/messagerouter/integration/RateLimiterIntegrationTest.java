@@ -90,22 +90,16 @@ class RateLimiterIntegrationTest {
     }
 
     @Test
-    void shouldEnforceRateLimitAndNackExcessMessages() {
+    void shouldEnforceRateLimitAndWaitForPermits() {
         // Given: Pool with rate limit of 5 per minute
         createPoolWithRateLimit(5);
         when(mockMediator.process(any())).thenReturn(MediationOutcome.success());
         AtomicInteger ackedCount = new AtomicInteger(0);
-        AtomicInteger nackedCount = new AtomicInteger(0);
 
         doAnswer(invocation -> {
             ackedCount.incrementAndGet();
             return null;
         }).when(mockCallback).ack(any());
-
-        doAnswer(invocation -> {
-            nackedCount.incrementAndGet();
-            return null;
-        }).when(mockCallback).nack(any());
 
         processPool.start();
 
@@ -117,11 +111,12 @@ class RateLimiterIntegrationTest {
             processPool.submit(message);
         }
 
-        // Then: First 5 should pass, next 5 should be rate limited
+        // Then: First 5 should be processed immediately, rest wait for permits
+        // Implementation now waits for permits instead of NACKing (messages stay in memory)
         await().untilAsserted(() -> {
-            assertTrue(ackedCount.get() >= 5, "Should ack at least 5 messages");
-            assertTrue(nackedCount.get() >= 5, "Should nack at least 5 messages due to rate limit");
-            verify(mockPoolMetrics, atLeast(5)).recordRateLimitExceeded("RATE-LIMIT-POOL");
+            assertTrue(ackedCount.get() >= 5, "Should ack at least 5 messages within rate limit");
+            // Rate limit exceeded should be recorded for messages that had to wait
+            verify(mockPoolMetrics, atLeast(1)).recordRateLimitExceeded("RATE-LIMIT-POOL");
         });
     }
 

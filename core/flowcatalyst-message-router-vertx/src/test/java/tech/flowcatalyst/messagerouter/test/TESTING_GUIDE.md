@@ -492,8 +492,8 @@ stubFor(post("/webhook").willReturn(ok()));
 // With delay
 stubFor(post("/webhook").willReturn(aResponse().withStatus(200).withFixedDelay(1000)));
 
-// With body
-stubFor(post("/webhook").willReturn(okJson("{\"status\":\"success\"}")));
+// With body (MediationResponse format)
+stubFor(post("/webhook").willReturn(okJson("{\"ack\":true}")));
 
 // Scenario-based (stateful)
 stubFor(post("/webhook")

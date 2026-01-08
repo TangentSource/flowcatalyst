@@ -30,6 +30,7 @@ import tech.flowcatalyst.messagerouter.model.MessagePointer;
 import tech.flowcatalyst.messagerouter.vertx.verticle.QueueConsumerVerticle;
 import tech.flowcatalyst.messagerouter.vertx.verticle.QueueManagerVerticle;
 import tech.flowcatalyst.messagerouter.warning.WarningService;
+import tech.flowcatalyst.standby.StandbyService;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -83,12 +84,24 @@ public class QueueManager implements MessageCallback {
     @Inject
     ObjectMapper objectMapper;
 
+    // StandbyService is optional - injected if standby is enabled (from shared module)
+    @Inject
+    jakarta.enterprise.inject.Instance<StandbyService> standbyServiceInstance;
+
+    private Optional<StandbyService> standbyService() {
+        return standbyServiceInstance.isResolvable()
+            ? Optional.of(standbyServiceInstance.get())
+            : Optional.empty();
+    }
+
     // Deployment IDs for verticles
     private String queueManagerVerticleId;
     private final Map<String, String> consumerVerticleIds = new ConcurrentHashMap<>();
+    private final Map<String, QueueConfig> consumerConfigs = new ConcurrentHashMap<>();
 
     private volatile boolean initialized = false;
     private volatile boolean shutdownInProgress = false;
+    private long healthCheckTimerId;
 
     // Metrics gauges
     private AtomicInteger inPipelineMapSizeGauge;
@@ -107,6 +120,9 @@ public class QueueManager implements MessageCallback {
     void onShutdown(@Observes ShutdownEvent event) {
         LOG.info("QueueManager shutting down...");
         shutdownInProgress = true;
+
+        // Cancel health check timer
+        vertx.cancelTimer(healthCheckTimerId);
 
         // Undeploy all consumer verticles
         for (String deploymentId : consumerVerticleIds.values()) {
@@ -166,7 +182,9 @@ public class QueueManager implements MessageCallback {
                     queueMetrics,
                     poolMetrics,
                     () -> sqsClient,
-                    this::fetchConfig
+                    this::fetchConfig,
+                    this::standbyService,
+                    meterRegistry
             );
 
             queueManagerVerticleId = vertx.deployVerticle(qmVerticle, qmOptions)
@@ -185,14 +203,18 @@ public class QueueManager implements MessageCallback {
             }
 
             initialized = true;
+
+            // Start consumer health monitoring (every 60 seconds)
+            healthCheckTimerId = vertx.setPeriodic(60_000, id -> monitorConsumerHealth());
+
             LOG.info("Vert.x verticles deployed successfully");
 
         } catch (Exception e) {
-            LOG.errorf("Failed to deploy verticles: %s", e.getMessage());
+            LOG.errorf(e, "Failed to deploy verticles: %s", e.getClass().getSimpleName());
             warningService.addWarning(
                     "VERTICLE_DEPLOY_FAILED",
                     "ERROR",
-                    "Failed to deploy Vert.x verticles: " + e.getMessage(),
+                    "Failed to deploy Vert.x verticles: " + e.getClass().getSimpleName() + " - " + e.getMessage(),
                     "QueueManager"
             );
         }
@@ -217,6 +239,7 @@ public class QueueManager implements MessageCallback {
                     .get(30, TimeUnit.SECONDS);
 
             consumerVerticleIds.put(queueConfig.queueUri(), deploymentId);
+            consumerConfigs.put(queueConfig.queueUri(), queueConfig);
             LOG.infof("QueueConsumerVerticle deployed for queue [%s]: %s",
                     queueConfig.queueUri(), deploymentId);
 
@@ -224,6 +247,67 @@ public class QueueManager implements MessageCallback {
             LOG.errorf("Failed to deploy consumer for queue [%s]: %s",
                     queueConfig.queueUri(), e.getMessage());
         }
+    }
+
+    /**
+     * Periodically monitors consumer health and restarts unhealthy consumers.
+     * Runs every 60 seconds to detect and remediate hung consumer threads.
+     */
+    private void monitorConsumerHealth() {
+        if (shutdownInProgress || !initialized) {
+            return;
+        }
+
+        for (Map.Entry<String, String> entry : consumerVerticleIds.entrySet()) {
+            String queueId = entry.getKey();
+            String deploymentId = entry.getValue();
+
+            // Query health from verticle via event bus
+            vertx.eventBus().<JsonObject>request("consumer." + queueId + ".health", "",
+                    new io.vertx.core.eventbus.DeliveryOptions().setSendTimeout(5000))
+                .onSuccess(reply -> {
+                    boolean healthy = reply.body().getBoolean("healthy", false);
+                    boolean running = reply.body().getBoolean("running", false);
+
+                    if (!healthy || !running) {
+                        long lastPollTime = reply.body().getLong("lastPollTime", 0L);
+                        long timeSinceLastPoll = lastPollTime > 0
+                                ? (System.currentTimeMillis() - lastPollTime) / 1000
+                                : -1;
+
+                        LOG.warnf("Consumer [%s] unhealthy (healthy=%s, running=%s, lastPoll=%ds ago), restarting...",
+                                queueId, healthy, running, timeSinceLastPoll);
+                        restartConsumer(queueId, deploymentId);
+                    }
+                })
+                .onFailure(err -> {
+                    LOG.warnf("Consumer [%s] not responding to health check: %s. Restarting...",
+                            queueId, err.getMessage());
+                    restartConsumer(queueId, deploymentId);
+                });
+        }
+    }
+
+    /**
+     * Restarts a consumer by undeploying and redeploying it.
+     */
+    private void restartConsumer(String queueId, String deploymentId) {
+        QueueConfig config = consumerConfigs.get(queueId);
+        if (config == null) {
+            LOG.errorf("Cannot restart consumer [%s]: no config found", queueId);
+            return;
+        }
+
+        vertx.undeploy(deploymentId)
+                .onComplete(ar -> {
+                    if (ar.failed()) {
+                        LOG.warnf("Failed to undeploy consumer [%s]: %s", queueId, ar.cause().getMessage());
+                    }
+                    // Redeploy regardless of undeploy result
+                    consumerVerticleIds.remove(queueId);
+                    deployConsumerVerticle(config);
+                    LOG.infof("Consumer [%s] restarted", queueId);
+                });
     }
 
     private MessageRouterConfig fetchConfig() {

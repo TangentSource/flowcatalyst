@@ -122,7 +122,7 @@ class CompleteEndToEndTest {
             .willReturn(aResponse()
                 .withStatus(200)
                 .withHeader("Content-Type", "application/json")
-                .withBody("{\"status\":\"success\"}")));
+                .withBody("{\"ack\":true}")));
 
         String messageBody = createMessageJson(
             "msg-e2e-1",
@@ -196,7 +196,7 @@ class CompleteEndToEndTest {
             .whenScenarioStateIs("retry-ready")
             .willReturn(aResponse()
                 .withStatus(200)
-                .withBody("{\"status\":\"success\"}")));
+                .withBody("{\"ack\":true}")));
 
         // Create queue with short visibility timeout for faster retry
         String retryQueueName = "e2e-retry-queue-" + UUID.randomUUID();

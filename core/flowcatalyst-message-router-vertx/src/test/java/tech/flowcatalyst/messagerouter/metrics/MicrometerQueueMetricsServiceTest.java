@@ -3,7 +3,6 @@ package tech.flowcatalyst.messagerouter.metrics;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import io.quarkus.test.junit.QuarkusTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -19,8 +18,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * - Queue metrics tracking (pendingMessages, messagesNotVisible) - NEW FUNCTIONALITY
  * - Stats calculation and aggregation
  * - Multiple queue handling
+ *
+ * Note: This is a unit test that doesn't require Quarkus runtime.
  */
-@QuarkusTest
 class MicrometerQueueMetricsServiceTest {
 
     private MicrometerQueueMetricsService metricsService;

@@ -34,7 +34,8 @@ public class LocalStackTestResource implements QuarkusTestResourceLifecycleManag
             "quarkus.sqs.aws.region", localStackContainer.getRegion(),
             "quarkus.sqs.aws.credentials.type", "static",
             "quarkus.sqs.aws.credentials.static-provider.access-key-id", localStackContainer.getAccessKey(),
-            "quarkus.sqs.aws.credentials.static-provider.secret-access-key", localStackContainer.getSecretKey()
+            "quarkus.sqs.aws.credentials.static-provider.secret-access-key", localStackContainer.getSecretKey(),
+            "message-router.enabled", "true"
         );
     }
 

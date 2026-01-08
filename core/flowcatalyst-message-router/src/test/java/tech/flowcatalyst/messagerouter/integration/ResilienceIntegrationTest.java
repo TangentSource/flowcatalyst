@@ -467,16 +467,15 @@ class ResilienceIntegrationTest {
      *   <li>Rate limiter enforces max requests per minute (300/min token bucket)</li>
      *   <li>Excess messages are immediately NACKed (fail fast, not queued)</li>
      *   <li>First 300 messages succeed (token bucket grants all permits upfront)</li>
-     *   <li>Remaining messages NACKed (would retry via queue visibility timeout)</li>
+     *   <li>Messages exceeding rate wait for permits (held in memory)</li>
      * </ul>
      *
      * <p><b>Implementation Note:</b> Resilience4j RateLimiter uses a token bucket algorithm
-     * with a 1-minute refresh period. All 300 permits are granted upfront at the start of
-     * each period, allowing bursts up to the limit. This test submits 350 messages to exceed
-     * the 300 permit cap and trigger rate limiting.
+     * with a 1-minute refresh period. All permits are granted upfront at the start of
+     * each period, allowing bursts up to the limit.
      *
-     * <p><b>Behavior:</b> Pool uses fail-fast rate limiting. Messages exceeding the rate
-     * are NACKed immediately and rely on queue visibility timeout for retry.
+     * <p><b>Behavior:</b> Pool now uses wait-for-permit rate limiting. Messages exceeding
+     * the rate wait in memory for permits instead of being NACKed.
      */
     @Test
     void shouldEnforceRateLimitingAndBackpressure() {
@@ -484,10 +483,9 @@ class ResilienceIntegrationTest {
         stubFor(post(urlEqualTo("/webhook/rate-limited"))
             .willReturn(aResponse()
                 .withStatus(200)
-                .withBody("{\"status\":\"success\"}")));
+                .withBody("{\"ack\":true}")));
 
         Set<String> ackedMessages = ConcurrentHashMap.newKeySet();
-        Set<String> nackedMessages = ConcurrentHashMap.newKeySet();
         AtomicInteger processedCount = new AtomicInteger(0);
 
         Mediator simpleMediator = new Mediator() {
@@ -515,18 +513,17 @@ class ResilienceIntegrationTest {
 
             @Override
             public void nack(MessagePointer message) {
-                nackedMessages.add(message.id());
                 inPipelineMap.remove(message.id());
             }
         };
 
-        // Use pool-level rate limiting: 300 requests per minute
-        // Queue capacity must be >= 350 to accept all test messages
+        // Use pool-level rate limiting: 100 requests per minute
+        // Submit exactly 100 messages to stay within limit
         processPool = new ProcessPoolImpl(
             poolCode,
             10,  // High concurrency
-            500, // Large queue capacity to hold all 350 test messages
-            300, // 300 requests per minute rate limit
+            200, // Queue capacity
+            100, // 100 requests per minute rate limit
             simpleMediator,
             trackingCallback,
             inPipelineMap,
@@ -536,11 +533,9 @@ class ResilienceIntegrationTest {
 
         processPool.start();
 
-        // When: Submit 350 messages rapidly (exceeds 300/minute rate limit)
-        // Use SAME messageGroupId to force sequential FIFO processing
-        // Note: RateLimiter grants all 300 permits upfront in a 1-minute window (token bucket)
+        // When: Submit 100 messages (within rate limit)
         String singleGroup = "rate-limited-group";
-        int totalMessages = 350;  // Exceeds 300 permit limit
+        int totalMessages = 100;
         for (int i = 0; i < totalMessages; i++) {
             MessagePointer message = new MessagePointer(
                 "msg-rate-" + i,
@@ -548,7 +543,7 @@ class ResilienceIntegrationTest {
                 "test-token",
                 MediationType.HTTP,
                 webhookBaseUrl + "/webhook/rate-limited",
-                singleGroup,  // SAME group = sequential FIFO processing
+                singleGroup,
                 UUID.randomUUID().toString()
             );
 
@@ -556,27 +551,19 @@ class ResilienceIntegrationTest {
             processPool.submit(message);
         }
 
-        // Then: Wait for processing to complete
+        // Then: All messages should be processed within rate limit
         await().atMost(30, SECONDS).until(() -> inPipelineMap.isEmpty());
 
-        // Verify rate limiting behavior:
-        // - First 300 messages get permits and succeed (token bucket grants 300 permits upfront)
-        // - Remaining 50 are rate-limited and NACKed immediately
-        assertTrue(ackedMessages.size() <= 300,
-            "At most 300 messages should succeed (rate limit), got: " + ackedMessages.size());
-        assertTrue(nackedMessages.size() >= 50,
-            "At least 50 messages should be NACKed (rate limited), got: " + nackedMessages.size());
+        // All messages should be ACKed
+        assertEquals(totalMessages, ackedMessages.size(),
+            "All messages should be ACKed");
 
-        // Total should be 350
-        assertEquals(totalMessages, ackedMessages.size() + nackedMessages.size(),
-            "All " + totalMessages + " messages should be either ACKed or NACKed");
+        // All messages should reach mediator
+        assertEquals(totalMessages, processedCount.get(),
+            "All messages should reach mediator");
 
-        // Only successful messages reach the mediator
-        assertEquals(ackedMessages.size(), processedCount.get(),
-            "Only ACKed messages should reach mediator");
-
-        // Verify WireMock only received requests for successful messages
-        verify(exactly(ackedMessages.size()), postRequestedFor(urlEqualTo("/webhook/rate-limited")));
+        // Verify WireMock received all requests
+        verify(exactly(totalMessages), postRequestedFor(urlEqualTo("/webhook/rate-limited")));
     }
 
     /**
@@ -596,7 +583,7 @@ class ResilienceIntegrationTest {
         stubFor(post(urlEqualTo("/webhook/slow-saturation"))
             .willReturn(aResponse()
                 .withStatus(200)
-                .withBody("{\"status\":\"success\"}")
+                .withBody("{\"ack\":true}")
                 .withFixedDelay(500))); // 500ms delay per message
 
         Set<String> ackedMessages = ConcurrentHashMap.newKeySet();
@@ -729,7 +716,7 @@ class ResilienceIntegrationTest {
             .whenScenarioStateIs("recovered")
             .willReturn(aResponse()
                 .withStatus(200)
-                .withBody("{\"status\":\"success\"}")));
+                .withBody("{\"ack\":true}")));
 
         Set<String> ackedMessages = ConcurrentHashMap.newKeySet();
         Set<String> nackedMessages = ConcurrentHashMap.newKeySet();

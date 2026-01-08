@@ -43,7 +43,7 @@ public class TestResponseResource {
 
         LOG.infof("Fast endpoint - Request #%d completed", requestId);
         return Response.ok()
-            .entity("{\"status\":\"success\",\"endpoint\":\"fast\",\"requestId\":" + requestId + "}")
+            .entity("{\"ack\":true,\"message\":\"fast endpoint\"}")
             .build();
     }
 
@@ -60,7 +60,7 @@ public class TestResponseResource {
 
         LOG.infof("Slow endpoint - Request #%d completed", requestId);
         return Response.ok()
-            .entity("{\"status\":\"success\",\"endpoint\":\"slow\",\"requestId\":" + requestId + "}")
+            .entity("{\"ack\":true,\"message\":\"slow endpoint\"}")
             .build();
     }
 
@@ -89,7 +89,7 @@ public class TestResponseResource {
         if (randomValue < 60) {
             LOG.infof("Faulty endpoint - Request #%d - Message ID: %s - returned 200", requestId, messageId);
             return Response.ok()
-                .entity("{\"status\":\"success\",\"endpoint\":\"faulty\",\"requestId\":" + requestId + ",\"messageId\":\"" + messageId + "\"}")
+                .entity("{\"ack\":true,\"message\":\"faulty endpoint\"}")
                 .build();
         } else if (randomValue < 80) {
             LOG.warnf("Faulty endpoint - Request #%d - Message ID: %s - returned 400", requestId, messageId);

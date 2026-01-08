@@ -19,8 +19,14 @@ import tech.flowcatalyst.messagerouter.vertx.channel.PoolChannels;
 import tech.flowcatalyst.messagerouter.vertx.channel.RouterChannels;
 import tech.flowcatalyst.messagerouter.vertx.message.RouterMessages.*;
 
+import tech.flowcatalyst.standby.StandbyService;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Tag;
+
 import java.time.Instant;
 import java.util.*;
+import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -37,9 +43,12 @@ import java.util.stream.Collectors;
 public class QueueManagerVerticle extends AbstractVerticle {
 
     private static final Logger LOG = Logger.getLogger(QueueManagerVerticle.class);
+    private static final String DEFAULT_POOL_CODE = "DEFAULT-POOL";
+    private static final int DEFAULT_POOL_CONCURRENCY = 20;
 
     // === OWNED STATE (plain HashMap - single threaded verticle) ===
     private final Map<String, String> poolDeploymentIds = new HashMap<>();
+    private final Map<String, String> drainingPools = new HashMap<>(); // Pools being gracefully drained
     private final Map<String, MessagePointer> inPipeline = new HashMap<>();
     private final Map<String, MessageCallbackInfo> messageCallbacks = new HashMap<>();
     private final Map<String, String> appMessageIdToPipelineKey = new HashMap<>();
@@ -50,25 +59,38 @@ public class QueueManagerVerticle extends AbstractVerticle {
     private final PoolMetricsService poolMetrics;
     private final Supplier<SqsClient> sqsClientSupplier;
     private final Supplier<MessageRouterConfig> configSupplier;
+    private final Supplier<Optional<StandbyService>> standbySupplier;
+    private final MeterRegistry meterRegistry;
 
     private SqsClient sqsClient;
     private long configSyncTimerId;
     private long visibilityExtensionTimerId;
+    private long leakDetectionTimerId;
+    private long drainingCleanupTimerId;
+    private boolean standbyMessageLogged = false;
+    private Counter defaultPoolUsageCounter;
 
     public QueueManagerVerticle(
             QueueMetricsService queueMetrics,
             PoolMetricsService poolMetrics,
             Supplier<SqsClient> sqsClientSupplier,
-            Supplier<MessageRouterConfig> configSupplier) {
+            Supplier<MessageRouterConfig> configSupplier,
+            Supplier<Optional<StandbyService>> standbySupplier,
+            MeterRegistry meterRegistry) {
         this.queueMetrics = queueMetrics;
         this.poolMetrics = poolMetrics;
         this.sqsClientSupplier = sqsClientSupplier;
         this.configSupplier = configSupplier;
+        this.standbySupplier = standbySupplier;
+        this.meterRegistry = meterRegistry;
     }
 
     @Override
     public void start() {
         LOG.info("Starting QueueManagerVerticle");
+
+        // Initialize metrics
+        initializeMetrics();
 
         // Initialize SQS client (blocking - fine on virtual thread)
         this.sqsClient = sqsClientSupplier.get();
@@ -86,8 +108,14 @@ public class QueueManagerVerticle extends AbstractVerticle {
         // Periodic visibility extension (55 seconds - before 60s default timeout)
         visibilityExtensionTimerId = vertx.setPeriodic(55_000, id -> extendMessageVisibility());
 
-        // Initial config sync
-        syncConfiguration();
+        // Periodic leak detection (30 seconds)
+        leakDetectionTimerId = vertx.setPeriodic(30_000, id -> checkForMapLeaks());
+
+        // Periodic draining pool cleanup (10 seconds)
+        drainingCleanupTimerId = vertx.setPeriodic(10_000, id -> cleanupDrainingPools());
+
+        // Defer initial config sync to allow HTTP server to start first
+        vertx.setTimer(1000, id -> syncConfiguration());
 
         LOG.info("QueueManagerVerticle started");
     }
@@ -99,6 +127,8 @@ public class QueueManagerVerticle extends AbstractVerticle {
         // Cancel timers
         vertx.cancelTimer(configSyncTimerId);
         vertx.cancelTimer(visibilityExtensionTimerId);
+        vertx.cancelTimer(leakDetectionTimerId);
+        vertx.cancelTimer(drainingCleanupTimerId);
 
         // Undeploy all pools
         for (String deploymentId : poolDeploymentIds.values()) {
@@ -112,9 +142,66 @@ public class QueueManagerVerticle extends AbstractVerticle {
         LOG.info("QueueManagerVerticle stopped");
     }
 
+    // === METRICS ===
+
+    private void initializeMetrics() {
+        if (meterRegistry == null) {
+            return;
+        }
+
+        // Register gauges for map sizes
+        meterRegistry.gauge(
+                "flowcatalyst.router.pipeline.size",
+                List.of(Tag.of("type", "inPipeline")),
+                inPipeline,
+                Map::size
+        );
+
+        meterRegistry.gauge(
+                "flowcatalyst.router.callbacks.size",
+                List.of(Tag.of("type", "callbacks")),
+                messageCallbacks,
+                Map::size
+        );
+
+        meterRegistry.gauge(
+                "flowcatalyst.router.pools.active",
+                List.of(Tag.of("type", "pools")),
+                poolDeploymentIds,
+                Map::size
+        );
+
+        meterRegistry.gauge(
+                "flowcatalyst.router.pools.draining",
+                List.of(Tag.of("type", "draining")),
+                drainingPools,
+                Map::size
+        );
+
+        // Counter for default pool usage (indicates missing pool configuration)
+        defaultPoolUsageCounter = meterRegistry.counter(
+                "flowcatalyst.router.defaultpool.usage",
+                List.of(Tag.of("pool", DEFAULT_POOL_CODE))
+        );
+
+        LOG.info("Metrics initialized");
+    }
+
     // === MESSAGE HANDLING ===
 
     private void handleBatch(Message<BatchRequest> msg) {
+        // Check standby status - only primary processes messages
+        Optional<StandbyService> standby = standbySupplier.get();
+        if (standby.isPresent() && !standby.get().isPrimary()) {
+            if (!standbyMessageLogged) {
+                LOG.info("In standby mode, not processing messages. Waiting for primary lock...");
+                standbyMessageLogged = true;
+            }
+            msg.reply(new OkReply());
+            return;
+        }
+        standbyMessageLogged = false; // Reset when we become primary
+
         BatchRequest batch = msg.body();
         String queueIdentifier = batch.queueIdentifier();
         String batchId = UUID.randomUUID().toString();
@@ -126,18 +213,37 @@ public class QueueManagerVerticle extends AbstractVerticle {
 
             // Deduplication check (safe - single threaded)
             if (inPipeline.containsKey(sqsMessageId)) {
-                LOG.debugf("Duplicate message [%s] - already in pipeline, NACKing with 0 delay", sqsMessageId);
+                LOG.debugf("Duplicate message [%s] - SQS redelivery due to visibility timeout", sqsMessageId);
+
+                // CRITICAL: Update stored callback with new receipt handle
+                // The old receipt handle is stale after visibility timeout redelivery.
+                // If we don't update it, the ACK when processing completes will fail silently.
+                MessageCallbackInfo existing = messageCallbacks.get(sqsMessageId);
+                if (existing != null) {
+                    messageCallbacks.put(sqsMessageId, new MessageCallbackInfo(
+                            queuedMsg.queueUrl(),
+                            queuedMsg.receiptHandle(),  // NEW valid handle
+                            existing.queueIdentifier()
+                    ));
+                    LOG.debugf("Updated receipt handle for in-pipeline message [%s]", sqsMessageId);
+                }
+
+                // NACK the duplicate delivery with 0 delay (it will become visible immediately,
+                // but that's fine since we're already processing it)
                 nackMessageDirect(queuedMsg.queueUrl(), queuedMsg.receiptHandle(), 0);
                 continue;
             }
 
             String poolCode = queuedMsg.poolCode();
 
-            // Check if pool exists
+            // Check if pool exists - use DEFAULT_POOL as fallback to prevent message loss
             if (!poolDeploymentIds.containsKey(poolCode)) {
-                LOG.warnf("Unknown pool [%s] for message [%s], NACKing with delay", poolCode, sqsMessageId);
-                nackMessageDirect(queuedMsg.queueUrl(), queuedMsg.receiptHandle(), 30);
-                continue;
+                LOG.warnf("Unknown pool [%s] for message [%s], routing to default pool", poolCode, sqsMessageId);
+                if (defaultPoolUsageCounter != null) {
+                    defaultPoolUsageCounter.increment();
+                }
+                ensureDefaultPoolDeployed();
+                poolCode = DEFAULT_POOL_CODE;
             }
 
             // Convert to MessagePointer for internal tracking
@@ -370,18 +476,70 @@ public class QueueManagerVerticle extends AbstractVerticle {
         }
     }
 
+    /**
+     * Moves a pool to draining state instead of immediate undeploy.
+     * The pool will be fully undeployed once it has no messages in flight.
+     */
     private void undeployPool(String poolCode) {
-        LOG.infof("Undeploying pool [%s]", poolCode);
+        LOG.infof("Moving pool [%s] to draining state", poolCode);
 
         String deploymentId = poolDeploymentIds.remove(poolCode);
         if (deploymentId != null) {
-            try {
-                vertx.undeploy(deploymentId).toCompletionStage().toCompletableFuture().join();
-                LOG.infof("Pool [%s] undeployed successfully", poolCode);
-            } catch (Exception e) {
-                LOG.errorf("Failed to undeploy pool [%s]: %s", poolCode, e.getMessage());
+            drainingPools.put(poolCode, deploymentId);
+        }
+    }
+
+    /**
+     * Periodically checks draining pools and undeploys them once fully drained.
+     */
+    private void cleanupDrainingPools() {
+        if (drainingPools.isEmpty()) {
+            return;
+        }
+
+        for (String poolCode : new ArrayList<>(drainingPools.keySet())) {
+            // Check if pool has any messages in flight
+            boolean hasMessagesInFlight = inPipeline.values().stream()
+                    .anyMatch(msg -> poolCode.equals(msg.poolCode()));
+
+            if (!hasMessagesInFlight) {
+                String deploymentId = drainingPools.remove(poolCode);
+                if (deploymentId != null) {
+                    LOG.infof("Pool [%s] fully drained, undeploying", poolCode);
+                    try {
+                        vertx.undeploy(deploymentId).toCompletionStage().toCompletableFuture().join();
+                        LOG.infof("Pool [%s] undeployed successfully", poolCode);
+                    } catch (Exception e) {
+                        LOG.errorf("Failed to undeploy drained pool [%s]: %s", poolCode, e.getMessage());
+                    }
+                }
+            } else {
+                long count = inPipeline.values().stream()
+                        .filter(msg -> poolCode.equals(msg.poolCode()))
+                        .count();
+                LOG.debugf("Pool [%s] still draining, %d messages in flight", poolCode, count);
             }
         }
+    }
+
+    /**
+     * Lazily creates the default fallback pool for messages with unknown pool codes.
+     * This prevents message loss when pool configuration is missing.
+     */
+    private void ensureDefaultPoolDeployed() {
+        if (poolDeploymentIds.containsKey(DEFAULT_POOL_CODE)) {
+            return; // Already deployed
+        }
+
+        LOG.infof("Creating default fallback pool [%s] with concurrency %d",
+                DEFAULT_POOL_CODE, DEFAULT_POOL_CONCURRENCY);
+
+        ProcessingPool defaultConfig = new ProcessingPool(
+                DEFAULT_POOL_CODE,
+                DEFAULT_POOL_CONCURRENCY,
+                null  // No rate limiting for default pool
+        );
+        deployPool(defaultConfig);
     }
 
     // === VISIBILITY EXTENSION ===
@@ -407,6 +565,61 @@ public class QueueManagerVerticle extends AbstractVerticle {
                 }
             }
         }
+    }
+
+    // === LEAK DETECTION ===
+
+    /**
+     * Periodic check for memory leaks in tracking maps.
+     * Detects anomalies like size mismatches between related maps.
+     */
+    private void checkForMapLeaks() {
+        int pipelineSize = inPipeline.size();
+        int callbacksSize = messageCallbacks.size();
+        int timestampsSize = messageSubmitTimes.size();
+        int appIdMapSize = appMessageIdToPipelineKey.size();
+
+        // Check for size mismatches between related maps
+        if (pipelineSize != callbacksSize) {
+            LOG.warnf("MAP SIZE MISMATCH: inPipeline=%d, messageCallbacks=%d - potential memory leak",
+                    pipelineSize, callbacksSize);
+        }
+
+        if (pipelineSize != timestampsSize) {
+            LOG.warnf("MAP SIZE MISMATCH: inPipeline=%d, messageSubmitTimes=%d - potential memory leak",
+                    pipelineSize, timestampsSize);
+        }
+
+        // Calculate estimated capacity based on pool concurrency
+        int estimatedCapacity = poolDeploymentIds.size() * DEFAULT_POOL_CONCURRENCY * 2;
+        if (estimatedCapacity == 0) {
+            estimatedCapacity = 100; // Minimum capacity estimate
+        }
+
+        // Warn if pipeline size exceeds expected capacity
+        if (pipelineSize > estimatedCapacity) {
+            LOG.warnf("PIPELINE SIZE EXCEEDS CAPACITY: %d > %d - messages may be stuck or leaking",
+                    pipelineSize, estimatedCapacity);
+        }
+
+        // Check for stale messages (in pipeline for more than 5 minutes)
+        Instant staleThreshold = Instant.now().minusSeconds(300);
+        int staleCount = 0;
+        for (Map.Entry<String, Instant> entry : messageSubmitTimes.entrySet()) {
+            if (entry.getValue().isBefore(staleThreshold)) {
+                staleCount++;
+                if (staleCount <= 5) { // Log first 5 stale messages
+                    LOG.warnf("Stale message detected: [%s] submitted at %s",
+                            entry.getKey(), entry.getValue());
+                }
+            }
+        }
+        if (staleCount > 5) {
+            LOG.warnf("... and %d more stale messages", staleCount - 5);
+        }
+
+        LOG.debugf("Leak check: pipeline=%d, callbacks=%d, timestamps=%d, appIdMap=%d, pools=%d",
+                pipelineSize, callbacksSize, timestampsSize, appIdMapSize, poolDeploymentIds.size());
     }
 
     // === HELPER CLASSES ===
