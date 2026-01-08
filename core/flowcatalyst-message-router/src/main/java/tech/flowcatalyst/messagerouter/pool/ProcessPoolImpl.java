@@ -219,6 +219,12 @@ public class ProcessPoolImpl implements ProcessPool {
 
     @Override
     public boolean submit(MessagePointer message) {
+        // Reject messages if pool is draining
+        if (!running.get()) {
+            LOG.debugf("Pool [%s] is draining, rejecting message [%s]", poolCode, message.id());
+            return false;
+        }
+
         // Route message to appropriate group queue
         String groupId = message.messageGroupId();
         if (groupId == null || groupId.isBlank()) {
@@ -238,30 +244,31 @@ public class ProcessPoolImpl implements ProcessPool {
         }
 
         // Get or create queue for this message group
-        // If this is a new group, also start a dedicated virtual thread for it
         // Per-group queues are unbounded - pool-level capacity enforced by totalQueuedMessages check above
+        // Note: No side effects in computeIfAbsent to comply with ConcurrentHashMap contract
         BlockingQueue<MessagePointer> groupQueue = messageGroupQueues.computeIfAbsent(
             groupId,
-            k -> {
-                LinkedBlockingQueue<MessagePointer> queue = new LinkedBlockingQueue<>();
-                // Start dedicated virtual thread for this message group
-                startGroupThread(finalGroupId, queue);
-                LOG.debugf("Created new message group [%s] with dedicated virtual thread", finalGroupId);
-                return queue;
-            }
+            k -> new LinkedBlockingQueue<>()
         );
 
-        // Check if thread for this group died unexpectedly and needs restart
-        // This can happen if an uncaught exception killed the thread
-        if (!activeGroupThreads.containsKey(finalGroupId)) {
-            LOG.warnf("Virtual thread for message group [%s] appears to have died - restarting", finalGroupId);
-            warningService.addWarning(
-                "GROUP_THREAD_RESTART",
-                "WARN",
-                String.format("Virtual thread for group [%s] in pool [%s] died and was restarted", finalGroupId, poolCode),
-                "ProcessPool:" + poolCode
-            );
-            startGroupThread(finalGroupId, groupQueue);
+        // Ensure thread is running for this group (atomic check-and-start)
+        // putIfAbsent is atomic - only one thread will get null and start the worker
+        // This handles both new groups and dead thread restarts
+        boolean startedThread = activeGroupThreads.putIfAbsent(finalGroupId, Boolean.TRUE) == null;
+        if (startedThread) {
+            // Check if queue already has messages - indicates this is a restart after thread death
+            if (!groupQueue.isEmpty()) {
+                LOG.warnf("Virtual thread for message group [%s] appears to have died - restarting", finalGroupId);
+                warningService.addWarning(
+                    "GROUP_THREAD_RESTART",
+                    "WARN",
+                    String.format("Virtual thread for group [%s] in pool [%s] died and was restarted", finalGroupId, poolCode),
+                    "ProcessPool:" + poolCode
+                );
+            } else {
+                LOG.debugf("Created new message group [%s] with dedicated virtual thread", finalGroupId);
+            }
+            executorService.submit(() -> processMessageGroup(finalGroupId, groupQueue));
         }
 
         // Check total capacity before submitting
@@ -484,18 +491,6 @@ public class ProcessPoolImpl implements ProcessPool {
                 );
             }
         }
-    }
-
-    /**
-     * Start a dedicated virtual thread for processing messages in a message group.
-     * This method is called when a new group is created or when a thread needs to be restarted.
-     *
-     * @param groupId the message group ID
-     * @param queue the queue for this message group
-     */
-    private void startGroupThread(String groupId, BlockingQueue<MessagePointer> queue) {
-        activeGroupThreads.put(groupId, Boolean.TRUE);
-        executorService.submit(() -> processMessageGroup(groupId, queue));
     }
 
     /**

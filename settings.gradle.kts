@@ -31,6 +31,9 @@ include("core:flowcatalyst-platform")
 // High-volume message pointer routing (scales independently)
 include("core:flowcatalyst-message-router")
 
+// Vert.x verticle-based message router (alternative implementation)
+include("core:flowcatalyst-message-router-vertx")
+
 // Stream processor (MongoDB change streams to projection collections)
 include("core:flowcatalyst-stream-processor")
 

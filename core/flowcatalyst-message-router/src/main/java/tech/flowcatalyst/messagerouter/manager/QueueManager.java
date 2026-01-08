@@ -954,6 +954,11 @@ public class QueueManager implements MessageCallback {
             return;
         }
 
+        // Take snapshot of pools for consistent view during this batch
+        // This prevents race conditions if syncConfiguration() modifies pools mid-batch
+        // With Issue #11 fix, submitting to a draining pool safely returns false
+        final Map<String, ProcessPool> poolSnapshot = Map.copyOf(processPools);
+
         // Generate unique batch ID for FIFO tracking
         String batchId = UUID.randomUUID().toString();
         LOG.debugf("Processing batch [%s] with %d messages", batchId, messages.size());
@@ -1029,8 +1034,8 @@ public class QueueManager implements MessageCallback {
             String poolCode = entry.getKey();
             List<BatchMessage> poolMessages = entry.getValue();
 
-            // Get or create pool
-            ProcessPool pool = processPools.get(poolCode);
+            // Get pool from snapshot (consistent view for entire batch)
+            ProcessPool pool = poolSnapshot.get(poolCode);
             if (pool == null) {
                 LOG.warnf("No process pool found for code [%s], routing to default pool", poolCode);
                 if (defaultPoolUsageCounter != null) {
@@ -1076,7 +1081,8 @@ public class QueueManager implements MessageCallback {
         for (Map.Entry<String, List<BatchMessage>> entry : messagesToRoute.entrySet()) {
             String poolCode = entry.getKey();
             List<BatchMessage> poolMessages = entry.getValue();
-            ProcessPool pool = processPools.getOrDefault(poolCode, getOrCreateDefaultPool());
+            // Use snapshot for consistency - pool reference same as Phase 2
+            ProcessPool pool = poolSnapshot.getOrDefault(poolCode, getOrCreateDefaultPool());
 
             // Group by messageGroupId to enforce sequential nacking within groups
             Map<String, List<BatchMessage>> messagesByGroup = new LinkedHashMap<>();
