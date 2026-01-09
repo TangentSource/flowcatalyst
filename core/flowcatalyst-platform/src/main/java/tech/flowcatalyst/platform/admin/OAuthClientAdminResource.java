@@ -213,6 +213,22 @@ public class OAuthClientAdminResource {
         }
         String adminPrincipalId = principalIdOpt.get();
 
+        // Validate redirect URIs use HTTPS (except localhost)
+        String redirectUriError = validateSecureUrls(request.redirectUris(), "Redirect URI");
+        if (redirectUriError != null) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                .entity(new ErrorResponse(redirectUriError))
+                .build();
+        }
+
+        // Validate allowed origins use HTTPS (except localhost)
+        String originsError = validateSecureUrls(request.allowedOrigins(), "Allowed origin");
+        if (originsError != null) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                .entity(new ErrorResponse(originsError))
+                .build();
+        }
+
         // Validate application IDs if provided
         if (request.applicationIds() != null && !request.applicationIds().isEmpty()) {
             List<Application> apps = applicationRepo.findByIds(request.applicationIds());
@@ -249,6 +265,7 @@ public class OAuthClientAdminResource {
         client.clientName = request.clientName();
         client.clientType = request.clientType();
         client.redirectUris = new ArrayList<>(request.redirectUris());
+        client.allowedOrigins = request.allowedOrigins() != null ? new ArrayList<>(request.allowedOrigins()) : new ArrayList<>();
         client.grantTypes = new ArrayList<>(request.grantTypes());
         client.defaultScopes = request.defaultScopes() != null ? String.join(" ", request.defaultScopes()) : null;
         client.applicationIds = request.applicationIds() != null ? new ArrayList<>(request.applicationIds()) : new ArrayList<>();
@@ -319,7 +336,24 @@ public class OAuthClientAdminResource {
             client.clientName = request.clientName();
         }
         if (request.redirectUris() != null) {
+            // Validate redirect URIs use HTTPS (except localhost)
+            String redirectUriError = validateSecureUrls(request.redirectUris(), "Redirect URI");
+            if (redirectUriError != null) {
+                return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(new ErrorResponse(redirectUriError))
+                    .build();
+            }
             client.redirectUris = new ArrayList<>(request.redirectUris());
+        }
+        if (request.allowedOrigins() != null) {
+            // Validate allowed origins use HTTPS (except localhost)
+            String originsError = validateSecureUrls(request.allowedOrigins(), "Allowed origin");
+            if (originsError != null) {
+                return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(new ErrorResponse(originsError))
+                    .build();
+            }
+            client.allowedOrigins = new ArrayList<>(request.allowedOrigins());
         }
         if (request.grantTypes() != null) {
             client.grantTypes = new ArrayList<>(request.grantTypes());
@@ -577,6 +611,52 @@ public class OAuthClientAdminResource {
         return appIdToName;
     }
 
+    /**
+     * Validate that a URL uses HTTPS, unless it's localhost (for development).
+     * Returns null if valid, or an error message if invalid.
+     */
+    private String validateSecureUrl(String url, String fieldName) {
+        try {
+            java.net.URI uri = java.net.URI.create(url);
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+
+            if (scheme == null || host == null) {
+                return fieldName + " must be a valid URL: " + url;
+            }
+
+            // Allow HTTP only for localhost/127.0.0.1 (development)
+            boolean isLocalhost = "localhost".equalsIgnoreCase(host)
+                || "127.0.0.1".equals(host)
+                || host.endsWith(".localhost");
+
+            if ("http".equalsIgnoreCase(scheme) && !isLocalhost) {
+                return fieldName + " must use HTTPS (HTTP is only allowed for localhost): " + url;
+            }
+
+            if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
+                return fieldName + " must use HTTP or HTTPS scheme: " + url;
+            }
+
+            return null; // Valid
+        } catch (IllegalArgumentException e) {
+            return fieldName + " is not a valid URL: " + url;
+        }
+    }
+
+    /**
+     * Validate a list of URLs for security requirements.
+     * Returns null if all valid, or the first error message.
+     */
+    private String validateSecureUrls(List<String> urls, String fieldName) {
+        if (urls == null) return null;
+        for (String url : urls) {
+            String error = validateSecureUrl(url, fieldName);
+            if (error != null) return error;
+        }
+        return null;
+    }
+
     private ClientDto toDto(OAuthClient client, Map<String, String> appIdToName) {
         List<ApplicationRef> applications = new ArrayList<>();
         if (client.applicationIds != null) {
@@ -592,6 +672,7 @@ public class OAuthClientAdminResource {
             client.clientName,
             client.clientType,
             client.redirectUris != null ? new ArrayList<>(client.redirectUris) : List.of(),
+            client.allowedOrigins != null ? new ArrayList<>(client.allowedOrigins) : List.of(),
             client.grantTypes != null ? new ArrayList<>(client.grantTypes) : List.of(),
             client.defaultScopes != null ? List.of(client.defaultScopes.split(" ")) : List.of(),
             client.pkceRequired,
@@ -616,6 +697,7 @@ public class OAuthClientAdminResource {
         String clientName,
         ClientType clientType,
         List<String> redirectUris,
+        List<String> allowedOrigins,
         List<String> grantTypes,
         List<String> defaultScopes,
         boolean pkceRequired,
@@ -643,6 +725,8 @@ public class OAuthClientAdminResource {
         @Size(min = 1, message = "At least one redirect URI is required")
         List<String> redirectUris,
 
+        List<String> allowedOrigins,
+
         @NotNull(message = "At least one grant type is required")
         @Size(min = 1, message = "At least one grant type is required")
         List<String> grantTypes,
@@ -657,6 +741,7 @@ public class OAuthClientAdminResource {
     public record UpdateClientRequest(
         String clientName,
         List<String> redirectUris,
+        List<String> allowedOrigins,
         List<String> grantTypes,
         List<String> defaultScopes,
         Boolean pkceRequired,

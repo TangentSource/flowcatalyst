@@ -71,6 +71,15 @@ class MongoOAuthClientRepository implements OAuthClientRepository {
     }
 
     @Override
+    public boolean isOriginAllowedByAnyClient(String origin) {
+        // Check if any active client has this origin in their allowedOrigins
+        return collection().find(and(
+            eq("active", true),
+            in("allowedOrigins", origin)
+        )).first() != null;
+    }
+
+    @Override
     public void persist(OAuthClient client) {
         collection().insertOne(client);
     }

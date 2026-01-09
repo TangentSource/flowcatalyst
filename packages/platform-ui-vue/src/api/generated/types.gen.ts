@@ -169,6 +169,7 @@ export type ClientDto1 = {
   clientName?: string;
   clientType?: ClientType;
   redirectUris?: Array<string>;
+  allowedOrigins?: Array<string>;
   grantTypes?: Array<string>;
   defaultScopes?: Array<string>;
   pkceRequired?: boolean;
@@ -254,6 +255,7 @@ export type CreateClientRequest1 = {
   clientName: string;
   clientType: ClientType;
   redirectUris: Array<string>;
+  allowedOrigins?: Array<string>;
   grantTypes: Array<string>;
   defaultScopes?: Array<string>;
   pkceRequired?: boolean;
@@ -1081,6 +1083,7 @@ export type UpdateClientRequest = {
 export type UpdateClientRequest1 = {
   clientName?: string;
   redirectUris?: Array<string>;
+  allowedOrigins?: Array<string>;
   grantTypes?: Array<string>;
   defaultScopes?: Array<string>;
   pkceRequired?: boolean;

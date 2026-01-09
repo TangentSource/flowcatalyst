@@ -25,6 +25,7 @@ const form = ref({
   clientName: '',
   clientType: 'PUBLIC' as ClientType,
   redirectUris: [] as string[],
+  allowedOrigins: [] as string[],
   grantTypes: ['authorization_code', 'refresh_token'],
   defaultScopes: ['openid', 'profile', 'email'],
   pkceRequired: true,
@@ -32,6 +33,7 @@ const form = ref({
 });
 
 const newRedirectUri = ref('');
+const newAllowedOrigin = ref('');
 
 // Secret dialog state
 const showSecretDialog = ref(false);
@@ -108,6 +110,40 @@ function removeRedirectUri(uri: string) {
   form.value.redirectUris = form.value.redirectUris.filter(u => u !== uri);
 }
 
+function addAllowedOrigin() {
+  const origin = newAllowedOrigin.value.trim();
+  if (origin && !form.value.allowedOrigins.includes(origin)) {
+    // Basic URL validation - must be a valid origin (scheme + host)
+    try {
+      const url = new URL(origin);
+      // Origin should not have path (other than /)
+      if (url.pathname !== '/' && url.pathname !== '') {
+        toast.add({
+          severity: 'error',
+          summary: 'Invalid Origin',
+          detail: 'Origin should not include a path (e.g., https://example.com)',
+          life: 3000,
+        });
+        return;
+      }
+      // Use the origin (scheme + host + port)
+      form.value.allowedOrigins.push(url.origin);
+      newAllowedOrigin.value = '';
+    } catch {
+      toast.add({
+        severity: 'error',
+        summary: 'Invalid URL',
+        detail: 'Please enter a valid origin URL',
+        life: 3000,
+      });
+    }
+  }
+}
+
+function removeAllowedOrigin(origin: string) {
+  form.value.allowedOrigins = form.value.allowedOrigins.filter(o => o !== origin);
+}
+
 async function createClient() {
   if (!isValid.value) return;
 
@@ -119,6 +155,7 @@ async function createClient() {
       clientName: form.value.clientName.trim(),
       clientType: form.value.clientType,
       redirectUris: form.value.redirectUris,
+      allowedOrigins: form.value.allowedOrigins.length > 0 ? form.value.allowedOrigins : undefined,
       grantTypes: form.value.grantTypes,
       defaultScopes: form.value.defaultScopes,
       pkceRequired: form.value.pkceRequired,
@@ -240,7 +277,34 @@ function closeSecretDialog() {
               @remove="removeRedirectUri(uri)"
             />
           </div>
-          <small class="field-help">Allowed callback URLs for OAuth redirects</small>
+          <small class="field-help">Allowed callback URLs for OAuth redirects. Must use HTTPS (except localhost).</small>
+        </div>
+
+        <div class="field">
+          <label>Allowed CORS Origins</label>
+          <div class="redirect-uri-input">
+            <InputText
+              v-model="newAllowedOrigin"
+              placeholder="https://app.example.com"
+              class="flex-grow"
+              @keyup.enter="addAllowedOrigin"
+            />
+            <Button
+              icon="pi pi-plus"
+              @click="addAllowedOrigin"
+              :disabled="!newAllowedOrigin.trim()"
+            />
+          </div>
+          <div v-if="form.allowedOrigins.length > 0" class="uri-list">
+            <Chip
+              v-for="origin in form.allowedOrigins"
+              :key="origin"
+              :label="origin"
+              removable
+              @remove="removeAllowedOrigin(origin)"
+            />
+          </div>
+          <small class="field-help">Origins allowed to make browser requests to the token endpoint. Must use HTTPS (except localhost).</small>
         </div>
 
         <div class="field">

@@ -18,6 +18,12 @@ public interface OAuthClientRepository {
     List<OAuthClient> findByActive(boolean active);
     List<OAuthClient> listAll();
 
+    /**
+     * Check if an origin is allowed by any active OAuth client.
+     * Used for CORS preflight validation when client_id is not yet known.
+     */
+    boolean isOriginAllowedByAnyClient(String origin);
+
     // Write operations
     void persist(OAuthClient client);
     void update(OAuthClient client);

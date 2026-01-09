@@ -52,6 +52,7 @@ public class JobDispatcher {
                 () -> new IllegalStateException("Queue URL required for SQS")));
             case EMBEDDED -> QueueConfig.embedded(config.embeddedDbPath());
             case ACTIVEMQ -> QueueConfig.activeMq(config.queueUrl().orElse("dispatch-queue"));
+            case NATS ->  QueueConfig.nats(config.queueUrl().orElse("dispatch-queue"));
         };
 
         queuePublisher = queuePublisherFactory.create(queueConfig);

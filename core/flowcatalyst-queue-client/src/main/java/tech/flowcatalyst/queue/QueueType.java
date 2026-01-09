@@ -17,6 +17,12 @@ public enum QueueType {
     ACTIVEMQ,
 
     /**
+     * NATS JetStream with durable storage.
+     * Supports message groups via subject-based routing.
+     */
+    NATS,
+
+    /**
      * Embedded SQLite-based queue.
      * Useful for development and single-node deployments.
      */

@@ -1,11 +1,13 @@
 package tech.flowcatalyst.queue;
 
+import io.nats.client.Connection;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import tech.flowcatalyst.queue.embedded.EmbeddedQueuePublisher;
+import tech.flowcatalyst.queue.nats.NatsQueuePublisher;
 import tech.flowcatalyst.queue.sqs.SqsQueuePublisher;
 
 import java.sql.SQLException;
@@ -21,6 +23,9 @@ public class QueuePublisherFactory {
     @Inject
     Instance<SqsClient> sqsClientInstance;
 
+    @Inject
+    Instance<Connection> natsConnectionInstance;
+
     /**
      * Create a QueuePublisher based on the provided configuration.
      *
@@ -31,6 +36,7 @@ public class QueuePublisherFactory {
     public QueuePublisher create(QueueConfig config) {
         return switch (config.queueType()) {
             case SQS -> createSqsPublisher(config);
+            case NATS -> createNatsPublisher(config);
             case EMBEDDED -> createEmbeddedPublisher(config);
             case ACTIVEMQ -> throw new UnsupportedOperationException(
                 "ActiveMQ publisher not yet implemented");
@@ -48,6 +54,19 @@ public class QueuePublisherFactory {
             config.queueUrl(), config.fifoEnabled());
 
         return new SqsQueuePublisher(sqsClient, config);
+    }
+
+    private QueuePublisher createNatsPublisher(QueueConfig config) {
+        if (natsConnectionInstance.isUnsatisfied()) {
+            throw new IllegalStateException(
+                "NATS Connection not available. Add jnats dependency and configure NATS connection.");
+        }
+
+        Connection connection = natsConnectionInstance.get();
+        LOG.infof("Creating NATS publisher for subject: %s (stream=%s)",
+            config.queueUrl(), config.natsStreamName().orElse("FLOWCATALYST"));
+
+        return new NatsQueuePublisher(connection, config);
     }
 
     private QueuePublisher createEmbeddedPublisher(QueueConfig config) {

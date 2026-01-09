@@ -68,6 +68,14 @@ public class OAuthClient {
     public List<String> redirectUris = new ArrayList<>();
 
     /**
+     * Allowed CORS origins for browser-based clients (SPAs).
+     * Used for token endpoint and other OAuth API calls from browsers.
+     * Example: ["https://app.example.com", "https://staging.example.com"]
+     * If empty, CORS is not enabled for this client.
+     */
+    public List<String> allowedOrigins = new ArrayList<>();
+
+    /**
      * Allowed grant types.
      * Examples: "authorization_code", "refresh_token", "client_credentials"
      */
@@ -125,6 +133,17 @@ public class OAuthClient {
             return false;
         }
         return redirectUris.contains(uri);
+    }
+
+    /**
+     * Check if a CORS origin is allowed for this client.
+     */
+    @BsonIgnore
+    public boolean isOriginAllowed(String origin) {
+        if (allowedOrigins == null || origin == null) {
+            return false;
+        }
+        return allowedOrigins.contains(origin);
     }
 
     /**

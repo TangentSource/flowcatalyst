@@ -13,6 +13,7 @@ export interface OAuthClient {
   clientName: string;
   clientType: ClientType;
   redirectUris: string[];
+  allowedOrigins: string[];
   grantTypes: string[];
   defaultScopes: string[];
   pkceRequired: boolean;
@@ -31,6 +32,7 @@ export interface CreateOAuthClientRequest {
   clientName: string;
   clientType: ClientType;
   redirectUris: string[];
+  allowedOrigins?: string[];
   grantTypes: string[];
   defaultScopes?: string[];
   pkceRequired?: boolean;
@@ -40,6 +42,7 @@ export interface CreateOAuthClientRequest {
 export interface UpdateOAuthClientRequest {
   clientName?: string;
   redirectUris?: string[];
+  allowedOrigins?: string[];
   grantTypes?: string[];
   defaultScopes?: string[];
   pkceRequired?: boolean;

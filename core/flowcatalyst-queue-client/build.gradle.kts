@@ -24,6 +24,9 @@ dependencies {
     // ActiveMQ Artemis JMS support (optional at runtime, can be added later)
     // compileOnly("io.quarkiverse.artemis:quarkus-artemis-jms:3.4.0")
 
+    // NATS JetStream support (optional at runtime)
+    compileOnly("io.nats:jnats:2.24.1")
+
     // Embedded queue support - SQLite
     compileOnly("org.xerial:sqlite-jdbc:3.47.1.0")
 

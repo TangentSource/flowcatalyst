@@ -29,12 +29,14 @@ const isEditing = ref(false);
 const editForm = ref({
   clientName: '',
   redirectUris: [] as string[],
+  allowedOrigins: [] as string[],
   grantTypes: [] as string[],
   defaultScopes: [] as string[],
   pkceRequired: true,
   applicationIds: [] as string[],
 });
 const newRedirectUri = ref('');
+const newAllowedOrigin = ref('');
 
 // Secret rotation dialog
 const showRotateSecretDialog = ref(false);
@@ -103,6 +105,7 @@ function resetEditForm() {
     editForm.value = {
       clientName: client.value.clientName,
       redirectUris: [...client.value.redirectUris],
+      allowedOrigins: [...(client.value.allowedOrigins || [])],
       grantTypes: [...client.value.grantTypes],
       defaultScopes: [...client.value.defaultScopes],
       pkceRequired: client.value.pkceRequired,
@@ -143,6 +146,37 @@ function removeRedirectUri(uri: string) {
   editForm.value.redirectUris = editForm.value.redirectUris.filter(u => u !== uri);
 }
 
+function addAllowedOrigin() {
+  const origin = newAllowedOrigin.value.trim();
+  if (origin && !editForm.value.allowedOrigins.includes(origin)) {
+    try {
+      const url = new URL(origin);
+      if (url.pathname !== '/' && url.pathname !== '') {
+        toast.add({
+          severity: 'error',
+          summary: 'Invalid Origin',
+          detail: 'Origin should not include a path (e.g., https://example.com)',
+          life: 3000,
+        });
+        return;
+      }
+      editForm.value.allowedOrigins.push(url.origin);
+      newAllowedOrigin.value = '';
+    } catch {
+      toast.add({
+        severity: 'error',
+        summary: 'Invalid URL',
+        detail: 'Please enter a valid origin URL',
+        life: 3000,
+      });
+    }
+  }
+}
+
+function removeAllowedOrigin(origin: string) {
+  editForm.value.allowedOrigins = editForm.value.allowedOrigins.filter(o => o !== origin);
+}
+
 async function saveChanges() {
   if (!client.value || !isValid.value) return;
 
@@ -153,6 +187,7 @@ async function saveChanges() {
     const updated = await oauthClientsApi.update(client.value.id, {
       clientName: editForm.value.clientName.trim(),
       redirectUris: editForm.value.redirectUris,
+      allowedOrigins: editForm.value.allowedOrigins,
       grantTypes: editForm.value.grantTypes,
       defaultScopes: editForm.value.defaultScopes,
       pkceRequired: editForm.value.pkceRequired,
@@ -348,6 +383,18 @@ function getClientTypeSeverity(clientType: string) {
             </div>
 
             <div class="field-group">
+              <label>Allowed CORS Origins</label>
+              <div v-if="client.allowedOrigins && client.allowedOrigins.length > 0" class="uri-list">
+                <Chip
+                  v-for="origin in client.allowedOrigins"
+                  :key="origin"
+                  :label="origin"
+                />
+              </div>
+              <span v-else class="text-muted">No CORS origins configured</span>
+            </div>
+
+            <div class="field-group">
               <label>Grant Types</label>
               <div class="tag-list">
                 <Tag
@@ -452,6 +499,34 @@ function getClientTypeSeverity(clientType: string) {
                   @remove="removeRedirectUri(uri)"
                 />
               </div>
+              <small class="field-help">Must use HTTPS (except localhost).</small>
+            </div>
+
+            <div class="field">
+              <label>Allowed CORS Origins</label>
+              <div class="redirect-uri-input">
+                <InputText
+                  v-model="newAllowedOrigin"
+                  placeholder="https://app.example.com"
+                  class="flex-grow"
+                  @keyup.enter="addAllowedOrigin"
+                />
+                <Button
+                  icon="pi pi-plus"
+                  @click="addAllowedOrigin"
+                  :disabled="!newAllowedOrigin.trim()"
+                />
+              </div>
+              <div v-if="editForm.allowedOrigins.length > 0" class="uri-list">
+                <Chip
+                  v-for="origin in editForm.allowedOrigins"
+                  :key="origin"
+                  :label="origin"
+                  removable
+                  @remove="removeAllowedOrigin(origin)"
+                />
+              </div>
+              <small class="field-help">Origins allowed to make browser requests to the token endpoint. Must use HTTPS (except localhost).</small>
             </div>
 
             <div class="field">

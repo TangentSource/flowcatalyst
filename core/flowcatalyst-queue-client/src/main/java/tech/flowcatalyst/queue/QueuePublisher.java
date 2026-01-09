@@ -10,9 +10,6 @@ public interface QueuePublisher {
 
     /**
      * Publish a single message to the queue.
-     *
-     * @param message The message to publish
-     * @return Result indicating success, failure, or deduplication
      */
     QueuePublishResult publish(QueueMessage message);
 
@@ -20,9 +17,6 @@ public interface QueuePublisher {
      * Publish multiple messages in a batch.
      * For SQS, batch size is limited to 10 messages.
      * For other implementations, batch may be processed sequentially.
-     *
-     * @param messages The messages to publish
-     * @return Result indicating which messages succeeded/failed
      */
     QueuePublishResult publishBatch(List<QueueMessage> messages);
 
@@ -36,15 +30,11 @@ public interface QueuePublisher {
 
     /**
      * Get the queue type this publisher is for.
-     *
-     * @return The queue type
      */
     QueueType getQueueType();
 
     /**
      * Check if this publisher is healthy and can accept messages.
-     *
-     * @return true if the queue connection is healthy
      */
     boolean isHealthy();
 
