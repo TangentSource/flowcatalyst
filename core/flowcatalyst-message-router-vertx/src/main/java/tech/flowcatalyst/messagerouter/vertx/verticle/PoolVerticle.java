@@ -3,33 +3,33 @@ package tech.flowcatalyst.messagerouter.vertx.verticle;
 import io.github.resilience4j.ratelimiter.RateLimiter;
 import io.github.resilience4j.ratelimiter.RateLimiterConfig;
 import io.vertx.core.AbstractVerticle;
+import io.vertx.core.DeploymentOptions;
+import io.vertx.core.ThreadingModel;
 import io.vertx.core.eventbus.Message;
 import io.vertx.core.json.JsonObject;
 import org.jboss.logging.Logger;
 import tech.flowcatalyst.messagerouter.metrics.PoolMetricsService;
-import tech.flowcatalyst.messagerouter.vertx.channel.MediatorChannels;
 import tech.flowcatalyst.messagerouter.vertx.channel.PoolChannels;
-import tech.flowcatalyst.messagerouter.vertx.channel.RouterChannels;
 import tech.flowcatalyst.messagerouter.vertx.message.RouterMessages.*;
 
 import java.time.Duration;
 import java.util.*;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
 
 /**
- * Pool verticle that manages message groups and enforces concurrency/rate limits.
+ * Pool verticle that manages message groups via dynamic worker verticle deployment.
+ * <p>
+ * Pure actor model - no Semaphores, no synchronized blocks, no BlockingQueues.
+ * Concurrency is controlled by the number of deployed GroupWorkerVerticles.
  * <p>
  * Owns:
- * - Group queues (one BlockingQueue per message group)
- * - Active group tracking
- * - Failed batch tracking for FIFO ordering
- * - Semaphore for concurrency control
- * - Rate limiter
+ * <ul>
+ *   <li>Worker deployment tracking (groupId → deploymentId)</li>
+ *   <li>Pending queue for messages when at concurrency limit</li>
+ *   <li>Failed batch tracking for FIFO ordering</li>
+ *   <li>Rate limiter (optional)</li>
+ * </ul>
  * <p>
- * Threading: Virtual Thread (blocking OK)
+ * Threading: Event Loop (non-blocking). Workers run on Virtual Threads.
  */
 public class PoolVerticle extends AbstractVerticle {
 
@@ -37,14 +37,22 @@ public class PoolVerticle extends AbstractVerticle {
 
     // === OWNED STATE (plain collections - single threaded verticle) ===
     private String poolCode;
-    private final Map<String, BlockingQueue<PoolMessage>> groupQueues = new HashMap<>();
-    private final Map<String, Boolean> activeGroups = new HashMap<>();
-    private final Set<String> failedBatchGroups = new HashSet<>();
-    private final Set<Thread> workerThreads = Collections.synchronizedSet(new HashSet<>());
+    private int maxConcurrency;
 
-    private Semaphore semaphore;
+    // groupId → deploymentId of worker verticle
+    private final Map<String, String> workerDeployments = new HashMap<>();
+
+    // Messages waiting for a worker slot (when at max concurrency)
+    private final Queue<PoolMessage> pendingMessages = new LinkedList<>();
+
+    // Groups waiting for a worker slot
+    private final Set<String> pendingGroups = new HashSet<>();
+
+    // Failed batch+group tracking for FIFO ordering
+    private final Set<String> failedBatchGroups = new HashSet<>();
+
+    // Rate limiter (optional)
     private RateLimiter rateLimiter;
-    private volatile boolean running = true;
 
     private final PoolMetricsService poolMetrics;
 
@@ -56,9 +64,7 @@ public class PoolVerticle extends AbstractVerticle {
     public void start() {
         JsonObject config = config();
         this.poolCode = config.getString("code");
-
-        int concurrency = config.getInteger("concurrency", 10);
-        this.semaphore = new Semaphore(concurrency);
+        this.maxConcurrency = config.getInteger("concurrency", 10);
 
         Integer rateLimitPerMinute = config.getInteger("rateLimitPerMinute");
         if (rateLimitPerMinute != null && rateLimitPerMinute > 0) {
@@ -66,30 +72,37 @@ public class PoolVerticle extends AbstractVerticle {
         }
 
         LOG.infof("PoolVerticle [%s] starting with concurrency=%d, rateLimit=%s",
-                poolCode, concurrency, rateLimitPerMinute);
+                poolCode, maxConcurrency, rateLimitPerMinute);
 
-        // Listen for messages and config updates using typed channels
+        // Listen for messages and config updates
         PoolChannels.Address poolAddress = PoolChannels.address(poolCode);
         poolAddress.messages(vertx).consumer(this::handleMessage);
         poolAddress.config(vertx).consumer(this::handleConfigUpdate);
+
+        // Listen for worker lifecycle events
+        vertx.eventBus().<GroupWorkerVerticle.WorkerIdle>consumer(
+                "pool." + poolCode + ".workerIdle", this::handleWorkerIdle);
+        vertx.eventBus().<GroupWorkerVerticle.BatchGroupFailed>consumer(
+                "pool." + poolCode + ".batchGroupFailed", this::handleBatchGroupFailed);
 
         // Periodic cleanup of failed batch groups (every 5 minutes)
         vertx.setPeriodic(300_000, id -> failedBatchGroups.clear());
 
         // Periodic metrics update
         vertx.setPeriodic(1_000, id -> updateMetrics());
+
+        LOG.infof("PoolVerticle [%s] started", poolCode);
     }
 
     @Override
     public void stop() {
-        LOG.infof("PoolVerticle [%s] stopping", poolCode);
-        running = false;
+        LOG.infof("PoolVerticle [%s] stopping, undeploying %d workers", poolCode, workerDeployments.size());
 
-        // Interrupt all worker threads to unblock queue.poll()
-        for (Thread worker : workerThreads) {
-            worker.interrupt();
+        // Undeploy all workers
+        for (String deploymentId : workerDeployments.values()) {
+            vertx.undeploy(deploymentId);
         }
-        workerThreads.clear();
+        workerDeployments.clear();
     }
 
     // === MESSAGE HANDLING ===
@@ -103,183 +116,199 @@ public class PoolVerticle extends AbstractVerticle {
         String batchGroupKey = batchId + "|" + groupId;
         if (failedBatchGroups.contains(batchGroupKey)) {
             LOG.debugf("Batch+group [%s] previously failed, NACKing message [%s]", batchGroupKey, message.sqsMessageId());
-            sendNack(message.sqsMessageId(), 10);
+            msg.fail(1, "Batch+group failed");
             return;
         }
 
-        // Get or create group queue (plain HashMap - single threaded)
-        BlockingQueue<PoolMessage> queue = groupQueues.get(groupId);
-        if (queue == null) {
-            queue = new LinkedBlockingQueue<>();
-            groupQueues.put(groupId, queue);
-        }
-
-        // Ensure group worker is running
-        if (!activeGroups.containsKey(groupId)) {
-            activeGroups.put(groupId, true);
-            startGroupWorker(groupId, queue);
-        }
-
-        // Add to queue
-        queue.offer(message);
-        poolMetrics.recordMessageSubmitted(poolCode);
-
-        LOG.debugf("Message [%s] queued in group [%s], queue size: %d", message.sqsMessageId(), groupId, queue.size());
-    }
-
-    private void startGroupWorker(String groupId, BlockingQueue<PoolMessage> queue) {
-        // Run on virtual thread - blocking is fine
-        vertx.executeBlocking(() -> {
-            processGroup(groupId, queue);
-            return null;
-        }, false);
-    }
-
-    private void processGroup(String groupId, BlockingQueue<PoolMessage> queue) {
-        LOG.debugf("Group worker started for [%s] in pool [%s]", groupId, poolCode);
-        workerThreads.add(Thread.currentThread());
-
-        try {
-            while (running) {
-                // Block waiting for message (5 min idle timeout)
-                PoolMessage message = queue.poll(5, TimeUnit.MINUTES);
-
-                if (message == null) {
-                    // Idle timeout - cleanup if queue is still empty
-                    if (queue.isEmpty()) {
-                        LOG.debugf("Group [%s] idle timeout, cleaning up", groupId);
-                        groupQueues.remove(groupId);
-                        activeGroups.remove(groupId);
-                        return;
-                    }
-                    continue;
-                }
-
-                // Wait for rate limit permit (blocking)
-                waitForRateLimitPermit();
-
-                // Acquire concurrency permit (blocking)
-                semaphore.acquire();
-                poolMetrics.recordProcessingStarted(poolCode);
-
-                long startTime = System.currentTimeMillis();
-                try {
-                    // Process via mediator (blocking request-reply)
-                    processMessage(message);
-                } finally {
-                    semaphore.release();
-                    poolMetrics.recordProcessingFinished(poolCode);
-                }
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            LOG.debugf("Group worker [%s] interrupted", groupId);
-        } finally {
-            workerThreads.remove(Thread.currentThread());
-            activeGroups.remove(groupId);
-            LOG.debugf("Group worker [%s] exited", groupId);
-        }
-    }
-
-    private void waitForRateLimitPermit() {
-        if (rateLimiter == null) {
+        // Check rate limit
+        if (rateLimiter != null && !rateLimiter.acquirePermission()) {
+            LOG.debugf("Rate limit exceeded for pool [%s], queueing message [%s]", poolCode, message.sqsMessageId());
+            pendingMessages.offer(message);
+            poolMetrics.recordRateLimitExceeded(poolCode);
+            msg.reply(new OkReply()); // Acknowledge receipt, will process later
             return;
         }
 
-        while (running) {
-            // Capture current limiter (may be replaced by config update)
-            RateLimiter limiter = this.rateLimiter;
-            if (limiter == null) {
-                return; // Rate limiting was removed
-            }
-
-            if (limiter.acquirePermission()) {
-                return; // Got permit
-            }
-
-            // No permit - wait briefly then re-check
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
-            }
+        // Check if worker exists for this group
+        if (workerDeployments.containsKey(groupId)) {
+            // Worker exists - route message to it
+            routeToWorker(groupId, message, msg);
+            return;
         }
+
+        // Need to deploy new worker - check concurrency limit
+        if (workerDeployments.size() >= maxConcurrency) {
+            // At capacity - queue message and group
+            LOG.debugf("Pool [%s] at max concurrency (%d), queueing message for group [%s]",
+                    poolCode, maxConcurrency, groupId);
+            pendingMessages.offer(message);
+            pendingGroups.add(groupId);
+            msg.reply(new OkReply()); // Acknowledge receipt, will process when slot available
+            return;
+        }
+
+        // Deploy new worker for this group
+        deployWorker(groupId, message, msg);
     }
 
-    private void processMessage(PoolMessage message) {
-        long startTime = System.currentTimeMillis();
+    private void deployWorker(String groupId, PoolMessage firstMessage, Message<PoolMessage> originalMsg) {
+        LOG.debugf("Deploying worker for pool [%s] group [%s]", poolCode, groupId);
 
-        try {
-            // Build typed mediation request
-            MediationRequest request = new MediationRequest(
-                    message.id(),
-                    message.sqsMessageId(),
-                    message.authToken(),
-                    message.mediationType(),
-                    message.mediationTarget(),
-                    message.messageGroupId()
-            );
+        JsonObject workerConfig = new JsonObject()
+                .put("poolCode", poolCode)
+                .put("groupId", groupId);
 
-            // Blocking request-reply to mediator via typed channel
-            MediationResult result = MediatorChannels.address(poolCode)
-                    .mediate(vertx)
-                    .requestBlocking(request);
+        DeploymentOptions options = new DeploymentOptions()
+                .setThreadingModel(ThreadingModel.VIRTUAL_THREAD)
+                .setConfig(workerConfig);
 
-            long durationMs = System.currentTimeMillis() - startTime;
-            handleMediationResult(message, result, durationMs);
+        vertx.deployVerticle(new GroupWorkerVerticle(), options)
+                .onSuccess(deploymentId -> {
+                    workerDeployments.put(groupId, deploymentId);
+                    LOG.infof("Worker deployed for pool [%s] group [%s], deployment: %s",
+                            poolCode, groupId, deploymentId);
 
-        } catch (Exception e) {
-            long durationMs = System.currentTimeMillis() - startTime;
-            LOG.warnf("Mediation failed for message [%s]: %s", message.sqsMessageId(), e.getMessage());
+                    // Route the first message
+                    routeToWorker(groupId, firstMessage, originalMsg);
 
-            poolMetrics.recordProcessingFailure(poolCode, durationMs, "MEDIATION_ERROR");
-            sendNack(message.sqsMessageId(), 30);
-            markBatchGroupFailed(message);
-        }
+                    // Worker deployed - concurrency count updated via updateMetrics()
+                })
+                .onFailure(err -> {
+                    LOG.errorf("Failed to deploy worker for pool [%s] group [%s]: %s",
+                            poolCode, groupId, err.getMessage());
+                    originalMsg.fail(2, "Worker deployment failed");
+                });
     }
 
-    private void handleMediationResult(PoolMessage message, MediationResult result, long durationMs) {
-        switch (result.outcome()) {
-            case SUCCESS -> {
-                poolMetrics.recordProcessingSuccess(poolCode, durationMs);
-                sendAck(message.sqsMessageId());
-            }
-            case NACK -> {
-                poolMetrics.recordProcessingFailure(poolCode, durationMs, "MEDIATION_ERROR");
-                sendNack(message.sqsMessageId(), result.delaySeconds());
-                markBatchGroupFailed(message);
-            }
-            case ERROR_CONFIG -> {
-                // Configuration error - ACK to remove from queue (won't succeed on retry)
-                poolMetrics.recordProcessingSuccess(poolCode, durationMs);
-                sendAck(message.sqsMessageId());
-            }
-        }
+    private void routeToWorker(String groupId, PoolMessage message, Message<PoolMessage> originalMsg) {
+        String address = "pool." + poolCode + ".group." + groupId;
+
+        vertx.eventBus().<OkReply>request(address, message)
+                .onSuccess(reply -> {
+                    poolMetrics.recordMessageSubmitted(poolCode);
+                    originalMsg.reply(new OkReply());
+                })
+                .onFailure(err -> {
+                    LOG.warnf("Failed to route message to worker [%s]: %s", groupId, err.getMessage());
+                    originalMsg.fail(3, "Routing failed");
+                });
     }
 
-    private void sendAck(String sqsMessageId) {
-        try {
-            RouterChannels.ack(vertx).requestBlocking(new AckRequest(sqsMessageId));
-        } catch (Exception e) {
-            LOG.errorf("Failed to send ACK for [%s]: %s", sqsMessageId, e.getMessage());
+    // === WORKER LIFECYCLE ===
+
+    private void handleWorkerIdle(Message<GroupWorkerVerticle.WorkerIdle> msg) {
+        GroupWorkerVerticle.WorkerIdle idle = msg.body();
+        String groupId = idle.groupId();
+        String deploymentId = idle.deploymentId();
+
+        LOG.debugf("Worker idle notification for pool [%s] group [%s]", poolCode, groupId);
+
+        // Verify this is still the active deployment for this group
+        String currentDeploymentId = workerDeployments.get(groupId);
+        if (currentDeploymentId == null || !currentDeploymentId.equals(deploymentId)) {
+            LOG.debugf("Ignoring stale idle notification for group [%s]", groupId);
+            return;
         }
+
+        // Undeploy the worker
+        vertx.undeploy(deploymentId)
+                .onSuccess(v -> {
+                    workerDeployments.remove(groupId);
+                    LOG.infof("Worker undeployed for pool [%s] group [%s]", poolCode, groupId);
+                    // Worker undeployed - concurrency count updated via updateMetrics()
+
+                    // Check if there are pending messages/groups waiting for a slot
+                    processPendingQueue();
+                })
+                .onFailure(err -> {
+                    LOG.warnf("Failed to undeploy worker for group [%s]: %s", groupId, err.getMessage());
+                    // Remove from tracking anyway
+                    workerDeployments.remove(groupId);
+                    processPendingQueue();
+                });
     }
 
-    private void sendNack(String sqsMessageId, int delaySeconds) {
-        try {
-            RouterChannels.nack(vertx).requestBlocking(new NackRequest(sqsMessageId, delaySeconds));
-        } catch (Exception e) {
-            LOG.errorf("Failed to send NACK for [%s]: %s", sqsMessageId, e.getMessage());
-        }
-    }
-
-    private void markBatchGroupFailed(PoolMessage message) {
-        String batchId = message.batchId();
-        String groupId = message.messageGroupId() != null ? message.messageGroupId() : "__DEFAULT__";
-        String batchGroupKey = batchId + "|" + groupId;
+    private void handleBatchGroupFailed(Message<GroupWorkerVerticle.BatchGroupFailed> msg) {
+        GroupWorkerVerticle.BatchGroupFailed failed = msg.body();
+        String batchGroupKey = failed.batchId() + "|" + failed.groupId();
         failedBatchGroups.add(batchGroupKey);
         LOG.debugf("Marked batch+group [%s] as failed for FIFO ordering", batchGroupKey);
+    }
+
+    private void processPendingQueue() {
+        // Process pending groups first (they need new workers)
+        while (!pendingGroups.isEmpty() && workerDeployments.size() < maxConcurrency) {
+            String groupId = pendingGroups.iterator().next();
+            pendingGroups.remove(groupId);
+
+            // Find first message for this group
+            PoolMessage message = findAndRemoveMessageForGroup(groupId);
+            if (message != null) {
+                // Deploy worker and route message
+                deployWorkerForPending(groupId, message);
+            }
+        }
+
+        // Process any remaining pending messages (for existing groups)
+        while (!pendingMessages.isEmpty()) {
+            PoolMessage message = pendingMessages.peek();
+            String groupId = message.messageGroupId() != null ? message.messageGroupId() : "__DEFAULT__";
+
+            if (workerDeployments.containsKey(groupId)) {
+                // Worker exists - route directly
+                pendingMessages.poll();
+                routeToWorkerDirect(groupId, message);
+            } else if (workerDeployments.size() < maxConcurrency) {
+                // Can deploy new worker
+                pendingMessages.poll();
+                deployWorkerForPending(groupId, message);
+            } else {
+                // Still at capacity, stop processing
+                break;
+            }
+        }
+    }
+
+    private PoolMessage findAndRemoveMessageForGroup(String groupId) {
+        Iterator<PoolMessage> it = pendingMessages.iterator();
+        while (it.hasNext()) {
+            PoolMessage msg = it.next();
+            String msgGroupId = msg.messageGroupId() != null ? msg.messageGroupId() : "__DEFAULT__";
+            if (msgGroupId.equals(groupId)) {
+                it.remove();
+                return msg;
+            }
+        }
+        return null;
+    }
+
+    private void deployWorkerForPending(String groupId, PoolMessage message) {
+        JsonObject workerConfig = new JsonObject()
+                .put("poolCode", poolCode)
+                .put("groupId", groupId);
+
+        DeploymentOptions options = new DeploymentOptions()
+                .setThreadingModel(ThreadingModel.VIRTUAL_THREAD)
+                .setConfig(workerConfig);
+
+        vertx.deployVerticle(new GroupWorkerVerticle(), options)
+                .onSuccess(deploymentId -> {
+                    workerDeployments.put(groupId, deploymentId);
+                    routeToWorkerDirect(groupId, message);
+                    // Worker deployed - concurrency count updated via updateMetrics()
+                })
+                .onFailure(err -> {
+                    LOG.errorf("Failed to deploy worker for pending group [%s]: %s", groupId, err.getMessage());
+                    // Message is lost - could re-queue or NACK
+                });
+    }
+
+    private void routeToWorkerDirect(String groupId, PoolMessage message) {
+        String address = "pool." + poolCode + ".group." + groupId;
+        vertx.eventBus().request(address, message)
+                .onSuccess(reply -> poolMetrics.recordMessageSubmitted(poolCode))
+                .onFailure(err -> LOG.warnf("Failed to route pending message to worker [%s]: %s",
+                        groupId, err.getMessage()));
     }
 
     // === CONFIG UPDATE ===
@@ -288,9 +317,8 @@ public class PoolVerticle extends AbstractVerticle {
         PoolConfigUpdate config = msg.body();
         LOG.infof("Received config update for pool [%s]", poolCode);
 
-        // Update concurrency
-        int newConcurrency = config.concurrency();
-        this.semaphore = new Semaphore(newConcurrency);
+        // Update concurrency limit
+        this.maxConcurrency = config.concurrency();
 
         // Update rate limiter
         Integer newRateLimit = config.rateLimitPerMinute();
@@ -300,17 +328,22 @@ public class PoolVerticle extends AbstractVerticle {
             this.rateLimiter = null;
         }
 
-        LOG.infof("Pool [%s] config updated: concurrency=%d, rateLimit=%s", poolCode, newConcurrency, newRateLimit);
+        LOG.infof("Pool [%s] config updated: concurrency=%d, rateLimit=%s",
+                poolCode, maxConcurrency, newRateLimit);
+
+        // Process pending queue in case concurrency increased
+        processPendingQueue();
     }
 
     // === METRICS ===
 
     private void updateMetrics() {
-        int activeWorkers = activeGroups.size();
-        int availablePermits = semaphore.availablePermits();
-        int totalQueueSize = groupQueues.values().stream().mapToInt(BlockingQueue::size).sum();
+        int activeWorkers = workerDeployments.size();
+        int availableSlots = maxConcurrency - activeWorkers;
+        int pendingCount = pendingMessages.size();
+        int pendingGroupCount = pendingGroups.size();
 
-        poolMetrics.updatePoolGauges(poolCode, activeWorkers, availablePermits, totalQueueSize, groupQueues.size());
+        poolMetrics.updatePoolGauges(poolCode, activeWorkers, availableSlots, pendingCount, pendingGroupCount);
     }
 
     // === HELPERS ===
@@ -319,7 +352,7 @@ public class PoolVerticle extends AbstractVerticle {
         RateLimiterConfig config = RateLimiterConfig.custom()
                 .limitRefreshPeriod(Duration.ofMinutes(1))
                 .limitForPeriod(limitPerMinute)
-                .timeoutDuration(Duration.ZERO) // Don't wait, we poll manually
+                .timeoutDuration(Duration.ZERO)
                 .build();
 
         return RateLimiter.of("pool-" + poolCode, config);
@@ -332,14 +365,14 @@ public class PoolVerticle extends AbstractVerticle {
     }
 
     public int getActiveWorkers() {
-        return activeGroups.size();
+        return workerDeployments.size();
     }
 
-    public int getQueueSize() {
-        return groupQueues.values().stream().mapToInt(BlockingQueue::size).sum();
+    public int getPendingCount() {
+        return pendingMessages.size();
     }
 
-    public int getAvailablePermits() {
-        return semaphore.availablePermits();
+    public int getAvailableSlots() {
+        return maxConcurrency - workerDeployments.size();
     }
 }
