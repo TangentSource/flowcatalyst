@@ -265,9 +265,22 @@ public class SqsQueueConsumer extends AbstractQueueConsumer {
 
         @Override
         public void nack(MessagePointer message) {
-            // For SQS, this is a no-op - we rely on visibility timeout
-            // Message will become visible again after timeout
-            LOG.infof("SQS: NACKing message [%s] - will become visible again after visibility timeout", message.id());
+            // Set visibility to 30 seconds for normal retry backoff
+            // This prevents tight retry loops when messages fail repeatedly
+            try {
+                ChangeMessageVisibilityRequest request = ChangeMessageVisibilityRequest.builder()
+                    .queueUrl(queueUrl)
+                    .receiptHandle(receiptHandle)
+                    .visibilityTimeout(30) // 30 seconds before message becomes visible again
+                    .build();
+
+                sqsClient.changeMessageVisibility(request);
+                LOG.infof("SQS: NACKing message [%s] - will become visible again in 30 seconds", message.id());
+            } catch (ReceiptHandleIsInvalidException e) {
+                LOG.debugf("Receipt handle invalid for message [%s], cannot set visibility for NACK", message.id());
+            } catch (Exception e) {
+                LOG.warnf(e, "Failed to set visibility for NACK on message [%s] - message may retry immediately", message.id());
+            }
         }
 
         @Override
@@ -280,9 +293,15 @@ public class SqsQueueConsumer extends AbstractQueueConsumer {
                     .build();
 
                 sqsClient.changeMessageVisibility(request);
-                LOG.debugf("Set fast-fail visibility (1s) for message [%s]", message.id());
+                LOG.debugf("Set fast-fail visibility (10s) for message [%s]", message.id());
             } catch (ReceiptHandleIsInvalidException e) {
                 LOG.debugf("Receipt handle invalid for message [%s], cannot change visibility", message.id());
+            } catch (SqsException e) {
+                if (isReceiptHandleExpired(e)) {
+                    LOG.debugf("Receipt handle expired for message [%s], cannot change visibility", message.id());
+                } else {
+                    LOG.warnf(e, "SQS error setting fast-fail visibility for message [%s]", message.id());
+                }
             } catch (Exception e) {
                 LOG.warnf(e, "Failed to set fast-fail visibility for message [%s]", message.id());
             }
@@ -303,6 +322,12 @@ public class SqsQueueConsumer extends AbstractQueueConsumer {
                 LOG.debugf("Reset visibility to 30s for message [%s]", message.id());
             } catch (ReceiptHandleIsInvalidException e) {
                 LOG.debugf("Receipt handle invalid for message [%s], cannot change visibility", message.id());
+            } catch (SqsException e) {
+                if (isReceiptHandleExpired(e)) {
+                    LOG.debugf("Receipt handle expired for message [%s], cannot change visibility", message.id());
+                } else {
+                    LOG.warnf(e, "SQS error resetting visibility for message [%s]", message.id());
+                }
             } catch (Exception e) {
                 LOG.warnf(e, "Failed to reset visibility for message [%s]", message.id());
             }
@@ -324,27 +349,23 @@ public class SqsQueueConsumer extends AbstractQueueConsumer {
                 LOG.infof("Set custom visibility delay to %ds for message [%s]", effectiveDelay, message.id());
             } catch (ReceiptHandleIsInvalidException e) {
                 LOG.debugf("Receipt handle invalid for message [%s], cannot set visibility delay", message.id());
+            } catch (SqsException e) {
+                if (isReceiptHandleExpired(e)) {
+                    LOG.debugf("Receipt handle expired for message [%s], cannot set visibility delay", message.id());
+                } else {
+                    LOG.warnf(e, "SQS error setting visibility delay for message [%s]", message.id());
+                }
             } catch (Exception e) {
                 LOG.warnf(e, "Failed to set visibility delay for message [%s]", message.id());
             }
         }
 
-        @Override
-        public void extendVisibility(MessagePointer message, int visibilityTimeoutSeconds) {
-            try {
-                ChangeMessageVisibilityRequest request = ChangeMessageVisibilityRequest.builder()
-                    .queueUrl(queueUrl)
-                    .receiptHandle(receiptHandle)
-                    .visibilityTimeout(visibilityTimeoutSeconds)
-                    .build();
-
-                sqsClient.changeMessageVisibility(request);
-                LOG.debugf("Extended visibility to %ds for message [%s]", visibilityTimeoutSeconds, message.id());
-            } catch (ReceiptHandleIsInvalidException e) {
-                LOG.debugf("Receipt handle invalid for message [%s], cannot extend visibility", message.id());
-            } catch (Exception e) {
-                LOG.warnf(e, "Failed to extend visibility for message [%s]", message.id());
-            }
+        /**
+         * Check if an SqsException is due to an expired receipt handle.
+         * This is expected when processing takes longer than the visibility timeout.
+         */
+        private boolean isReceiptHandleExpired(SqsException e) {
+            return e.getMessage() != null && e.getMessage().contains("receipt handle has expired");
         }
     }
 }

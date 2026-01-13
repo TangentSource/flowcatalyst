@@ -1,4 +1,4 @@
-import { apiFetch } from './client';
+import { bffFetch } from './client';
 
 export type ApplicationType = 'APPLICATION' | 'INTEGRATION';
 
@@ -62,7 +62,7 @@ export const applicationsApi = {
     if (options.activeOnly) params.append('activeOnly', 'true');
     if (options.type) params.append('type', options.type);
     const queryString = params.toString();
-    return apiFetch(`/admin/applications${queryString ? `?${queryString}` : ''}`);
+    return bffFetch(`/admin/applications${queryString ? `?${queryString}` : ''}`);
   },
 
   /**
@@ -81,11 +81,11 @@ export const applicationsApi = {
   },
 
   get(id: string): Promise<Application> {
-    return apiFetch(`/admin/applications/${id}`);
+    return bffFetch(`/admin/applications/${id}`);
   },
 
   getByCode(code: string): Promise<Application> {
-    return apiFetch(`/admin/applications/by-code/${code}`);
+    return bffFetch(`/admin/applications/by-code/${code}`);
   },
 
   /**
@@ -93,29 +93,29 @@ export const applicationsApi = {
    * Returns the application with service account credentials (only available at creation time).
    */
   create(data: CreateApplicationRequest): Promise<ApplicationWithServiceAccount> {
-    return apiFetch('/admin/applications', {
+    return bffFetch('/admin/applications', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
   update(id: string, data: UpdateApplicationRequest): Promise<Application> {
-    return apiFetch(`/admin/applications/${id}`, {
+    return bffFetch(`/admin/applications/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
   },
 
   activate(id: string): Promise<Application> {
-    return apiFetch(`/admin/applications/${id}/activate`, { method: 'POST' });
+    return bffFetch(`/admin/applications/${id}/activate`, { method: 'POST' });
   },
 
   deactivate(id: string): Promise<Application> {
-    return apiFetch(`/admin/applications/${id}/deactivate`, { method: 'POST' });
+    return bffFetch(`/admin/applications/${id}/deactivate`, { method: 'POST' });
   },
 
   delete(id: string): Promise<void> {
-    return apiFetch(`/admin/applications/${id}`, { method: 'DELETE' });
+    return bffFetch(`/admin/applications/${id}`, { method: 'DELETE' });
   },
 
   /**
@@ -126,7 +126,7 @@ export const applicationsApi = {
     message: string;
     serviceAccount: ServiceAccountCredentials;
   }> {
-    return apiFetch(`/admin/applications/${id}/provision-service-account`, {
+    return bffFetch(`/admin/applications/${id}/provision-service-account`, {
       method: 'POST',
     });
   },

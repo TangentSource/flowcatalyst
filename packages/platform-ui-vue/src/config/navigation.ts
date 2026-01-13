@@ -76,6 +76,11 @@ export const NAVIGATION_CONFIG: NavGroup[] = [
         route: '/clients',
       },
       {
+        label: 'CORS Origins',
+        icon: 'pi pi-link',
+        route: '/platform/cors',
+      },
+      {
         label: 'Audit Log',
         icon: 'pi pi-history',
         route: '/platform/audit-log',

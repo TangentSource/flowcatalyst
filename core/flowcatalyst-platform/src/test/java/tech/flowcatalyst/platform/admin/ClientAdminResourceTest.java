@@ -78,7 +78,7 @@ class ClientAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/clients")
+            .get("/bff/admin/clients")
         .then()
             .statusCode(200)
             .body("clients", notNullValue())
@@ -91,7 +91,7 @@ class ClientAdminResourceTest {
         given()
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/clients")
+            .get("/bff/admin/clients")
         .then()
             .statusCode(401);
     }
@@ -113,7 +113,7 @@ class ClientAdminResourceTest {
                 }
                 """.formatted(uniqueId, uniqueId))
         .when()
-            .post("/api/admin/clients")
+            .post("/bff/admin/clients")
         .then()
             .statusCode(201)
             .body("id", notNullValue())
@@ -141,7 +141,7 @@ class ClientAdminResourceTest {
                 }
                 """.formatted(uniqueId))
         .when()
-            .post("/api/admin/clients")
+            .post("/bff/admin/clients")
         .then()
             .statusCode(400)
             .body("error", containsString("already exists"));
@@ -160,7 +160,7 @@ class ClientAdminResourceTest {
                 }
                 """)
         .when()
-            .post("/api/admin/clients")
+            .post("/bff/admin/clients")
         .then()
             .statusCode(400);
     }
@@ -177,7 +177,7 @@ class ClientAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/clients/" + client.id)
+            .get("/bff/admin/clients/" + client.id)
         .then()
             .statusCode(200)
             .body("id", equalTo(client.id))
@@ -192,7 +192,7 @@ class ClientAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/clients/999999999")
+            .get("/bff/admin/clients/999999999")
         .then()
             .statusCode(404);
     }
@@ -214,7 +214,7 @@ class ClientAdminResourceTest {
                 }
                 """)
         .when()
-            .put("/api/admin/clients/" + client.id)
+            .put("/bff/admin/clients/" + client.id)
         .then()
             .statusCode(200)
             .body("name", equalTo("Updated Name"));
@@ -237,7 +237,7 @@ class ClientAdminResourceTest {
                 }
                 """)
         .when()
-            .post("/api/admin/clients/" + client.id + "/suspend")
+            .post("/bff/admin/clients/" + client.id + "/suspend")
         .then()
             .statusCode(200)
             .body("message", equalTo("Client suspended"));
@@ -247,7 +247,7 @@ class ClientAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/clients/" + client.id)
+            .get("/bff/admin/clients/" + client.id)
         .then()
             .statusCode(200)
             .body("status", equalTo("SUSPENDED"));
@@ -264,7 +264,7 @@ class ClientAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .post("/api/admin/clients/" + client.id + "/activate")
+            .post("/bff/admin/clients/" + client.id + "/activate")
         .then()
             .statusCode(200)
             .body("message", equalTo("Client activated"));
@@ -285,7 +285,7 @@ class ClientAdminResourceTest {
                 }
                 """)
         .when()
-            .post("/api/admin/clients/" + client.id + "/deactivate")
+            .post("/bff/admin/clients/" + client.id + "/deactivate")
         .then()
             .statusCode(200)
             .body("message", equalTo("Client deactivated"));
@@ -309,7 +309,7 @@ class ClientAdminResourceTest {
                 }
                 """)
         .when()
-            .post("/api/admin/clients/" + client.id + "/notes")
+            .post("/bff/admin/clients/" + client.id + "/notes")
         .then()
             .statusCode(201)
             .body("message", equalTo("Note added"));
@@ -327,7 +327,7 @@ class ClientAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/clients/by-identifier/identifier-test-" + uniqueId)
+            .get("/bff/admin/clients/by-identifier/identifier-test-" + uniqueId)
         .then()
             .statusCode(200)
             .body("id", equalTo(client.id))

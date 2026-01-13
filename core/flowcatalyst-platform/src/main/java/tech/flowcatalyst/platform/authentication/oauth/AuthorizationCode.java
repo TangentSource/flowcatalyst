@@ -17,9 +17,15 @@ import java.time.Instant;
 public class AuthorizationCode {
 
     /**
-     * The authorization code value (64 char random string).
+     * MongoDB document ID.
      */
     @BsonId
+    public String id;
+
+    /**
+     * The authorization code value (64 char random string).
+     * Has a unique index for lookups.
+     */
     public String code;
 
     /**

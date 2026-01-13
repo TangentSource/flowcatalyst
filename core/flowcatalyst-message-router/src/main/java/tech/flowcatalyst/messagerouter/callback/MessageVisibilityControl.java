@@ -47,14 +47,4 @@ public interface MessageVisibilityControl {
      * @param delaySeconds the delay in seconds before the message becomes visible again (1-43200)
      */
     void setVisibilityDelay(MessagePointer message, int delaySeconds);
-
-    /**
-     * Extend message visibility timeout to keep message invisible while processing continues.
-     * This prevents message redelivery when processing takes longer than the initial visibility timeout.
-     * Should be called periodically (e.g., every 15 seconds) while message is being processed.
-     *
-     * @param message the message to extend visibility for
-     * @param visibilityTimeoutSeconds how long to keep the message invisible (typically 30-60 seconds)
-     */
-    void extendVisibility(MessagePointer message, int visibilityTimeoutSeconds);
 }

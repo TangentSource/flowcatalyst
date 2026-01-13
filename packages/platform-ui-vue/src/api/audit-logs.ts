@@ -2,7 +2,7 @@
  * API client for Audit Log operations.
  */
 
-import { apiFetch } from './client';
+import { bffFetch } from './client';
 
 export interface AuditLog {
   id: string;
@@ -47,14 +47,14 @@ export async function fetchAuditLogs(filters: AuditLogFilters = {}): Promise<Aud
   if (filters.pageSize !== undefined) params.set('pageSize', String(filters.pageSize));
 
   const query = params.toString();
-  return apiFetch<AuditLogListResponse>(`/admin/audit-logs${query ? `?${query}` : ''}`);
+  return bffFetch<AuditLogListResponse>(`/admin/audit-logs${query ? `?${query}` : ''}`);
 }
 
 /**
  * Fetch a single audit log by ID.
  */
 export async function fetchAuditLogById(id: string): Promise<AuditLogDetail> {
-  return apiFetch<AuditLogDetail>(`/admin/audit-logs/${id}`);
+  return bffFetch<AuditLogDetail>(`/admin/audit-logs/${id}`);
 }
 
 /**
@@ -64,7 +64,7 @@ export async function fetchAuditLogsForEntity(
   entityType: string,
   entityId: string
 ): Promise<AuditLogListResponse> {
-  return apiFetch<AuditLogListResponse>(
+  return bffFetch<AuditLogListResponse>(
     `/admin/audit-logs/entity/${encodeURIComponent(entityType)}/${encodeURIComponent(entityId)}`
   );
 }
@@ -73,12 +73,12 @@ export async function fetchAuditLogsForEntity(
  * Fetch distinct entity types that have audit logs.
  */
 export async function fetchEntityTypes(): Promise<{ entityTypes: string[] }> {
-  return apiFetch<{ entityTypes: string[] }>('/admin/audit-logs/entity-types');
+  return bffFetch<{ entityTypes: string[] }>('/admin/audit-logs/entity-types');
 }
 
 /**
  * Fetch distinct operations that have audit logs.
  */
 export async function fetchOperations(): Promise<{ operations: string[] }> {
-  return apiFetch<{ operations: string[] }>('/admin/audit-logs/operations');
+  return bffFetch<{ operations: string[] }>('/admin/audit-logs/operations');
 }

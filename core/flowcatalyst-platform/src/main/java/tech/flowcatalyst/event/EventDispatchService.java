@@ -67,7 +67,10 @@ public class EventDispatchService {
     @Inject
     ObjectMapper objectMapper;
 
-    @ConfigProperty(name = "flowcatalyst.dispatch.queue-url")
+    @ConfigProperty(name = "flowcatalyst.features.messaging-enabled", defaultValue = "true")
+    boolean messagingEnabled;
+
+    @ConfigProperty(name = "flowcatalyst.dispatch.queue-url", defaultValue = "")
     String queueUrl;
 
     @ConfigProperty(name = "flowcatalyst.dispatch.processing-endpoint", defaultValue = "http://localhost:8080/api/dispatch/process")
@@ -97,6 +100,11 @@ public class EventDispatchService {
      * @return List of all created dispatch jobs
      */
     public List<DispatchJob> createDispatchJobsForEvents(List<Event> events) {
+        if (!messagingEnabled) {
+            LOG.debug("Messaging disabled - skipping event dispatch");
+            return List.of();
+        }
+
         if (events == null || events.isEmpty()) {
             return List.of();
         }

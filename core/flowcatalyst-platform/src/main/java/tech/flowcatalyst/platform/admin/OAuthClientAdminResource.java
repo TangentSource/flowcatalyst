@@ -44,8 +44,8 @@ import java.util.stream.Collectors;
  *
  * <p>All operations require admin-level permissions.
  */
-@Path("/api/admin/oauth-clients")
-@Tag(name = "OAuth Client Admin", description = "Administrative operations for OAuth2 client management")
+@Path("/bff/admin/oauth-clients")
+@Tag(name = "BFF - OAuth Client Admin", description = "Administrative operations for OAuth2 client management")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 @EmbeddedModeOnly
@@ -174,7 +174,9 @@ public class OAuthClientAdminResource {
                 .build();
         }
 
-        return clientRepo.findByClientIdIncludingInactive(clientId)
+        // Strip prefix to get internal ID
+        String internalClientId = toInternalClientId(clientId);
+        return clientRepo.findByClientIdIncludingInactive(internalClientId)
             .map(client -> {
                 Map<String, String> appIdToName = buildAppNameMap(client.applicationIds);
                 return Response.ok(toDto(client, appIdToName)).build();
@@ -472,7 +474,7 @@ public class OAuthClientAdminResource {
 
         LOG.infof("OAuth client secret rotated: %s by principal %s", client.clientId, adminPrincipalId);
 
-        return Response.ok(new RotateSecretResponse(client.clientId, newSecret)).build();
+        return Response.ok(new RotateSecretResponse(toExternalClientId(client.clientId), newSecret)).build();
     }
 
     /**
@@ -589,9 +591,36 @@ public class OAuthClientAdminResource {
 
     // ==================== Helper Methods ====================
 
+    private static final String CLIENT_ID_PREFIX = "oauth_";
+
     private String generateClientId() {
-        // Format: fc_{tsid} for easy identification
-        return "fc_" + TsidGenerator.generate();
+        // Store raw TSID in database, prefix added at API boundary
+        return TsidGenerator.generate();
+    }
+
+    /**
+     * Convert internal client ID (raw TSID) to external format with prefix.
+     * Used when returning data to API consumers.
+     */
+    private static String toExternalClientId(String internalId) {
+        if (internalId == null) return null;
+        return CLIENT_ID_PREFIX + internalId;
+    }
+
+    /**
+     * Convert external client ID (with prefix) to internal format (raw TSID).
+     * Used when receiving data from API consumers.
+     */
+    private static String toInternalClientId(String externalId) {
+        if (externalId == null) return null;
+        if (externalId.startsWith(CLIENT_ID_PREFIX)) {
+            return externalId.substring(CLIENT_ID_PREFIX.length());
+        }
+        // Also support legacy fc_ prefix for backwards compatibility
+        if (externalId.startsWith("fc_")) {
+            return externalId.substring(3);
+        }
+        return externalId;
     }
 
     private String generateClientSecret() {
@@ -668,7 +697,7 @@ public class OAuthClientAdminResource {
 
         return new ClientDto(
             client.id,
-            client.clientId,
+            toExternalClientId(client.clientId),  // Transform to external format
             client.clientName,
             client.clientType,
             client.redirectUris != null ? new ArrayList<>(client.redirectUris) : List.of(),

@@ -1,6 +1,7 @@
 package tech.flowcatalyst.platform.authorization;
 
 import io.quarkus.logging.Log;
+import io.quarkus.runtime.Startup;
 import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
@@ -25,6 +26,7 @@ import java.util.Set;
  * CRUD operations with audit logging, use RoleAdminService.
  */
 @ApplicationScoped
+@Startup
 public class RoleSyncService {
 
     @Inject

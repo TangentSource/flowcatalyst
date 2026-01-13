@@ -37,7 +37,8 @@ public class OAuthClient {
 
     /**
      * Unique client identifier used in OAuth flows.
-     * Format: "fc_{TSID}" (e.g., "fc_0HZXEQ5Y8JY5Z")
+     * Stored as raw TSID (e.g., "0HZXEQ5Y8JY5Z").
+     * External API adds "oauth_" prefix for display (e.g., "oauth_0HZXEQ5Y8JY5Z").
      */
     public String clientId;
 

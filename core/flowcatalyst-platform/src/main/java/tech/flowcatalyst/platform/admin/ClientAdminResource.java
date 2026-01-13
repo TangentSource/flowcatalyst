@@ -46,8 +46,8 @@ import java.util.stream.Collectors;
  *
  * All operations require admin-level permissions.
  */
-@Path("/api/admin/clients")
-@Tag(name = "Client Admin", description = "Administrative operations for client management")
+@Path("/bff/admin/clients")
+@Tag(name = "BFF - Client Admin", description = "Administrative operations for client management")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 @EmbeddedModeOnly

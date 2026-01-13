@@ -49,8 +49,8 @@ import java.util.Map;
  * Applications are the software products that users access. Each application
  * has a unique code that serves as the prefix for roles.
  */
-@Path("/api/admin/applications")
-@Tag(name = "Application Admin", description = "Application management endpoints")
+@Path("/bff/admin/applications")
+@Tag(name = "BFF - Application Admin", description = "Application management endpoints")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 @EmbeddedModeOnly

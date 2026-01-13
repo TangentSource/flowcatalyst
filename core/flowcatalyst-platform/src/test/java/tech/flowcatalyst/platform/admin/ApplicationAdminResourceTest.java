@@ -85,7 +85,7 @@ class ApplicationAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/applications")
+            .get("/bff/admin/applications")
         .then()
             .statusCode(200)
             .body("applications", notNullValue())
@@ -98,7 +98,7 @@ class ApplicationAdminResourceTest {
         given()
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/applications")
+            .get("/bff/admin/applications")
         .then()
             .statusCode(401);
     }
@@ -122,7 +122,7 @@ class ApplicationAdminResourceTest {
                 }
                 """.formatted(uniqueId, uniqueId))
         .when()
-            .post("/api/admin/applications")
+            .post("/bff/admin/applications")
         .then()
             .statusCode(201)
             .body("id", notNullValue())
@@ -150,7 +150,7 @@ class ApplicationAdminResourceTest {
                 }
                 """.formatted(uniqueId))
         .when()
-            .post("/api/admin/applications")
+            .post("/bff/admin/applications")
         .then()
             .statusCode(400)
             .body("error", containsString("already exists"));
@@ -169,7 +169,7 @@ class ApplicationAdminResourceTest {
                 }
                 """)
         .when()
-            .post("/api/admin/applications")
+            .post("/bff/admin/applications")
         .then()
             .statusCode(400)
             .body("error", containsString("Invalid"));
@@ -186,7 +186,7 @@ class ApplicationAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/applications/" + app.id)
+            .get("/bff/admin/applications/" + app.id)
         .then()
             .statusCode(200)
             .body("id", equalTo(app.id))
@@ -201,7 +201,7 @@ class ApplicationAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/applications/999999999")
+            .get("/bff/admin/applications/999999999")
         .then()
             .statusCode(404);
     }
@@ -215,7 +215,7 @@ class ApplicationAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/applications/by-code/" + app.code)
+            .get("/bff/admin/applications/by-code/" + app.code)
         .then()
             .statusCode(200)
             .body("code", equalTo(app.code));
@@ -238,7 +238,7 @@ class ApplicationAdminResourceTest {
                 }
                 """)
         .when()
-            .put("/api/admin/applications/" + app.id)
+            .put("/bff/admin/applications/" + app.id)
         .then()
             .statusCode(200)
             .body("name", equalTo("Updated App Name"))
@@ -256,7 +256,7 @@ class ApplicationAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .post("/api/admin/applications/" + app.id + "/deactivate")
+            .post("/bff/admin/applications/" + app.id + "/deactivate")
         .then()
             .statusCode(200)
             .body("message", equalTo("Application deactivated"));
@@ -266,7 +266,7 @@ class ApplicationAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/applications/" + app.id)
+            .get("/bff/admin/applications/" + app.id)
         .then()
             .statusCode(200)
             .body("active", equalTo(false));
@@ -281,7 +281,7 @@ class ApplicationAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .post("/api/admin/applications/" + app.id + "/activate")
+            .post("/bff/admin/applications/" + app.id + "/activate")
         .then()
             .statusCode(200)
             .body("message", equalTo("Application activated"));
@@ -304,7 +304,7 @@ class ApplicationAdminResourceTest {
                 }
                 """)
         .when()
-            .put("/api/admin/applications/" + app.id + "/clients/" + testClient.id)
+            .put("/bff/admin/applications/" + app.id + "/clients/" + testClient.id)
         .then()
             .statusCode(200)
             .body("applicationId", equalTo(app.id))
@@ -329,7 +329,7 @@ class ApplicationAdminResourceTest {
                 }
                 """)
         .when()
-            .put("/api/admin/applications/" + app.id + "/clients/" + testClient.id)
+            .put("/bff/admin/applications/" + app.id + "/clients/" + testClient.id)
         .then()
             .statusCode(200);
 
@@ -337,7 +337,7 @@ class ApplicationAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/applications/" + app.id + "/clients")
+            .get("/bff/admin/applications/" + app.id + "/clients")
         .then()
             .statusCode(200)
             .body("clientConfigs", notNullValue())
@@ -353,7 +353,7 @@ class ApplicationAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .post("/api/admin/applications/" + app.id + "/clients/" + testClient.id + "/enable")
+            .post("/bff/admin/applications/" + app.id + "/clients/" + testClient.id + "/enable")
         .then()
             .statusCode(200)
             .body("message", equalTo("Application enabled for client"));
@@ -369,7 +369,7 @@ class ApplicationAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .post("/api/admin/applications/" + app.id + "/clients/" + testClient.id + "/enable")
+            .post("/bff/admin/applications/" + app.id + "/clients/" + testClient.id + "/enable")
         .then()
             .statusCode(200);
 
@@ -377,7 +377,7 @@ class ApplicationAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .post("/api/admin/applications/" + app.id + "/clients/" + testClient.id + "/disable")
+            .post("/bff/admin/applications/" + app.id + "/clients/" + testClient.id + "/disable")
         .then()
             .statusCode(200)
             .body("message", equalTo("Application disabled for client"));

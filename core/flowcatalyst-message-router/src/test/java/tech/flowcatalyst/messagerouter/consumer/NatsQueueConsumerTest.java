@@ -326,52 +326,6 @@ class NatsQueueConsumerTest {
     }
 
     @Test
-    void shouldExtendVisibilityUsingInProgress() throws Exception {
-        // Given
-        String messageBody = """
-            {
-                "id": "msg-extend",
-                "poolCode": "POOL-A",
-                "authToken": "test-token",
-                "mediationType": "HTTP",
-                "mediationTarget": "http://localhost:8080/test",
-                "messageGroupId": "test-group"
-            }
-            """;
-
-        Message natsMessage = createMockNatsMessage(messageBody, 1L);
-
-        when(mockSubscription.fetch(eq(10), any(Duration.class)))
-            .thenReturn(List.of(natsMessage))
-            .thenReturn(List.of());
-
-        ArgumentCaptor<List<QueueManager.BatchMessage>> batchCaptor = ArgumentCaptor.forClass(List.class);
-        doNothing().when(mockQueueManager).routeMessageBatch(batchCaptor.capture());
-
-        // When
-        natsConsumer.start();
-
-        await().untilAsserted(() -> {
-            verify(mockQueueManager).routeMessageBatch(anyList());
-        });
-
-        // Extract callback from captured batch
-        List<QueueManager.BatchMessage> batch = batchCaptor.getValue();
-        assertFalse(batch.isEmpty());
-        MessageCallback callback = batch.get(0).callback();
-        assertTrue(callback instanceof MessageVisibilityControl);
-
-        MessageVisibilityControl visibilityControl = (MessageVisibilityControl) callback;
-        MessagePointer testMessage = new MessagePointer("msg-extend", "POOL-A", "token", MediationType.HTTP, "http://test.com", null, null);
-
-        // Extend visibility for long-running processing
-        visibilityControl.extendVisibility(testMessage, 60);
-
-        // Then - should call inProgress() to reset ack timeout
-        verify(natsMessage).inProgress();
-    }
-
-    @Test
     void shouldStopGracefully() throws Exception {
         // Given
         when(mockSubscription.fetch(eq(10), any(Duration.class)))

@@ -1,6 +1,7 @@
 package tech.flowcatalyst.platform.authorization;
 
 import io.quarkus.logging.Log;
+import io.quarkus.runtime.Startup;
 import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
@@ -26,6 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * This is the source of truth for all permissions and roles in the system.
  */
 @ApplicationScoped
+@Startup
 public class PermissionRegistry {
 
     // Permission string -> PermissionDefinition

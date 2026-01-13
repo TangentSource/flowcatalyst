@@ -154,10 +154,10 @@ public class ProvisionServiceAccountUseCase {
             );
         }
 
-        // Generate IDs
+        // Generate IDs (raw TSIDs - prefix added at API boundary)
         String principalId = TsidGenerator.generate();
         String oauthClientId = TsidGenerator.generate();
-        String clientIdValue = "fc_" + TsidGenerator.generate();
+        String clientIdValue = TsidGenerator.generate();  // Raw TSID, "oauth_" prefix added at API boundary
 
         // Generate client secret (only available now)
         String clientSecret = generateClientSecret();

@@ -38,8 +38,8 @@ import java.util.List;
  * All operations require admin-level permissions.
  * Secret resolution is restricted to Super Admin only.
  */
-@Path("/api/admin/auth-configs")
-@Tag(name = "Auth Config Admin", description = "Administrative operations for domain authentication configuration")
+@Path("/bff/admin/auth-configs")
+@Tag(name = "BFF - Auth Config Admin", description = "Administrative operations for domain authentication configuration")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 @EmbeddedModeOnly

@@ -92,7 +92,23 @@ export async function login(credentials: LoginCredentials): Promise<void> {
 
     const data: LoginResponse = await response.json();
     authStore.setUser(mapLoginResponseToUser(data));
-    // Use replace to avoid back-button returning to login
+
+    // Check if this is part of an OAuth flow - redirect back to /oauth/authorize
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('oauth') === 'true') {
+      // Rebuild OAuth authorize URL with all params
+      const oauthParams = new URLSearchParams();
+      const oauthFields = ['response_type', 'client_id', 'redirect_uri', 'scope', 'state',
+                          'code_challenge', 'code_challenge_method', 'nonce'];
+      for (const field of oauthFields) {
+        const value = urlParams.get(field);
+        if (value) oauthParams.set(field, value);
+      }
+      window.location.href = `/oauth/authorize?${oauthParams.toString()}`;
+      return;
+    }
+
+    // Normal login - go to dashboard
     await router.replace('/dashboard');
   } catch (error: any) {
     authStore.setLoading(false);

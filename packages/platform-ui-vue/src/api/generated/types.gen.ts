@@ -267,6 +267,11 @@ export type CreateClientResponse = {
   clientSecret?: string;
 };
 
+export type CreateCorsOriginRequest = {
+  origin?: string;
+  description?: string;
+};
+
 export type CreateDispatchJobRequest = {
   source: string;
   kind?: DispatchKind;
@@ -3050,6 +3055,87 @@ export type PostApiAdminOauthClientsByIdRotateSecretResponses = {
 
 export type PostApiAdminOauthClientsByIdRotateSecretResponse =
   PostApiAdminOauthClientsByIdRotateSecretResponses[keyof PostApiAdminOauthClientsByIdRotateSecretResponses];
+
+export type GetApiAdminPlatformCorsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/api/admin/platform/cors";
+};
+
+export type GetApiAdminPlatformCorsResponses = {
+  /**
+   * OK
+   */
+  200: unknown;
+};
+
+export type PostApiAdminPlatformCorsData = {
+  body: CreateCorsOriginRequest;
+  path?: never;
+  query?: never;
+  url: "/api/admin/platform/cors";
+};
+
+export type PostApiAdminPlatformCorsErrors = {
+  /**
+   * Bad Request
+   */
+  400: unknown;
+};
+
+export type PostApiAdminPlatformCorsResponses = {
+  /**
+   * OK
+   */
+  200: unknown;
+};
+
+export type GetApiAdminPlatformCorsAllowedData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/api/admin/platform/cors/allowed";
+};
+
+export type GetApiAdminPlatformCorsAllowedResponses = {
+  /**
+   * OK
+   */
+  200: unknown;
+};
+
+export type DeleteApiAdminPlatformCorsByIdData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/cors/{id}";
+};
+
+export type DeleteApiAdminPlatformCorsByIdResponses = {
+  /**
+   * OK
+   */
+  200: unknown;
+};
+
+export type GetApiAdminPlatformCorsByIdData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/admin/platform/cors/{id}";
+};
+
+export type GetApiAdminPlatformCorsByIdResponses = {
+  /**
+   * OK
+   */
+  200: unknown;
+};
 
 export type GetApiAdminPrincipalsData = {
   body?: never;

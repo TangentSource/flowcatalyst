@@ -46,8 +46,8 @@ import java.util.List;
  * - Credential management (regenerate token, regenerate secret)
  * - Role assignments
  */
-@Path("/api/admin/service-accounts")
-@Tag(name = "Service Account Admin", description = "Administrative operations for service account management")
+@Path("/bff/admin/service-accounts")
+@Tag(name = "BFF - Service Account Admin", description = "Administrative operations for service account management")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 @EmbeddedModeOnly

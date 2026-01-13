@@ -229,6 +229,12 @@ const router = createRouter({
           name: 'event-detail',
           component: () => import('@/pages/events/EventListPage.vue'),
         },
+        // Platform - CORS Origins
+        {
+          path: 'platform/cors',
+          name: 'cors-origins',
+          component: () => import('@/pages/platform/CorsOriginsPage.vue'),
+        },
         // Platform - Audit Log
         {
           path: 'platform/audit-log',

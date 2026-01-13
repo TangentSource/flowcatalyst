@@ -4,45 +4,31 @@ import io.quarkus.runtime.ShutdownEvent;
 import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
-import jakarta.inject.Inject;
-import tech.flowcatalyst.streamprocessor.StreamProcessorStarter;
 
 import java.util.logging.Logger;
 
 /**
  * FlowCatalyst App startup handler.
  *
- * This is the all-in-one deployment that includes:
- * - flowcatalyst-platform (auth, admin, dispatch, events)
- * - flowcatalyst-message-router (message pointer routing)
- * - flowcatalyst-stream-processor (change stream processing)
+ * <p>This deployment includes:
+ * <ul>
+ *   <li>flowcatalyst-platform - Auth, OAuth/OIDC, principals, applications</li>
+ *   <li>flowcatalyst-stream-processor - Change stream processing (config: stream-processor.enabled)</li>
+ *   <li>flowcatalyst-dispatch-scheduler - Job dispatch/scheduling (config: dispatch-scheduler.enabled)</li>
+ * </ul>
  *
- * The stream processor is started programmatically here so that it can be
- * controlled independently in split deployments.
+ * <p>Each module has its own auto-start handler that respects its enabled config.</p>
  */
 @ApplicationScoped
 public class AppStartup {
 
     private static final Logger LOG = Logger.getLogger(AppStartup.class.getName());
 
-    @Inject
-    StreamProcessorStarter streamProcessor;
-
     void onStart(@Observes StartupEvent event) {
-        LOG.info("FlowCatalyst App starting...");
-
-        // Start the stream processor (if enabled)
-        streamProcessor.start();
-
-        LOG.info("FlowCatalyst App started successfully");
+        LOG.info("FlowCatalyst App started");
     }
 
     void onShutdown(@Observes ShutdownEvent event) {
-        LOG.info("FlowCatalyst App shutting down...");
-
-        // Stop the stream processor gracefully
-        streamProcessor.stop();
-
-        LOG.info("FlowCatalyst App shutdown complete");
+        LOG.info("FlowCatalyst App shutdown");
     }
 }

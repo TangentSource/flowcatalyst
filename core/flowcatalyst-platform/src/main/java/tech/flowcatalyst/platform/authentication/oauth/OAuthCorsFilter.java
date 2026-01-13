@@ -16,16 +16,20 @@ import java.io.IOException;
 import java.util.Optional;
 
 /**
- * CORS filter for OAuth endpoints that dynamically allows origins based on
+ * CORS filter for OAuth and OIDC endpoints that dynamically allows origins based on
  * the OAuthClient's configured allowedOrigins.
  *
  * <p>This filter handles:
  * <ul>
- *   <li>Preflight OPTIONS requests - responds immediately with CORS headers</li>
- *   <li>Actual requests - adds CORS headers to responses if origin is allowed</li>
+ *   <li>/oauth/* - OAuth endpoints (authorize, token, etc.)</li>
+ *   <li>/.well-known/* - OIDC discovery endpoints</li>
+ *   <li>/auth/* - Authentication endpoints</li>
  * </ul>
  *
- * <p>The client_id is extracted from:
+ * <p>For discovery endpoints (/.well-known/*), the origin is checked against ALL
+ * registered OAuth clients since these are public endpoints.
+ *
+ * <p>For /oauth/* endpoints, the client_id is extracted from:
  * <ul>
  *   <li>Query parameter (for /oauth/authorize and /oauth/token)</li>
  *   <li>Authorization header (Basic auth for /oauth/token)</li>
@@ -34,10 +38,6 @@ import java.util.Optional;
  * <p>For preflight OPTIONS requests to /oauth/token where client_id cannot be determined
  * from query params or headers, the filter checks if the origin is allowed by ANY active
  * OAuth client. The actual POST request will then validate the specific client.
- *
- * <p><b>SPA Integration Note:</b> For best results, SPAs should include client_id as a
- * query parameter when calling /oauth/token (e.g., POST /oauth/token?client_id=xxx).
- * This allows proper CORS validation. Alternatively, use Basic auth header.
  */
 @Provider
 @Priority(Priorities.HEADER_DECORATOR)
@@ -63,8 +63,12 @@ public class OAuthCorsFilter implements ContainerRequestFilter, ContainerRespons
     public void filter(ContainerRequestContext requestContext) throws IOException {
         String path = requestContext.getUriInfo().getPath();
 
-        // Only handle /oauth/* paths
-        if (!path.startsWith("oauth/") && !path.startsWith("/oauth/")) {
+        // Check if this is a path we handle
+        boolean isOAuthPath = path.startsWith("oauth/") || path.startsWith("/oauth/");
+        boolean isWellKnownPath = path.startsWith(".well-known/") || path.startsWith("/.well-known/");
+        boolean isAuthPath = path.startsWith("auth/") || path.startsWith("/auth/");
+
+        if (!isOAuthPath && !isWellKnownPath && !isAuthPath) {
             return;
         }
 
@@ -73,11 +77,26 @@ public class OAuthCorsFilter implements ContainerRequestFilter, ContainerRespons
             return; // No origin header, not a CORS request
         }
 
-        // Extract client_id from request
-        String clientId = extractClientId(requestContext);
-
         boolean isPreflight = "OPTIONS".equalsIgnoreCase(requestContext.getMethod())
                 && requestContext.getHeaderString(ACCESS_CONTROL_REQUEST_METHOD) != null;
+
+        // For .well-known and /auth paths, check if ANY client allows this origin
+        // These are public endpoints used by OIDC clients
+        if (isWellKnownPath || isAuthPath) {
+            if (clientRepo.isOriginAllowedByAnyClient(origin)) {
+                LOG.debugf("CORS: Origin %s allowed for %s", origin, path);
+                requestContext.setProperty(VALIDATED_ORIGIN_PROP, origin);
+                if (isPreflight) {
+                    requestContext.abortWith(buildPreflightResponse(origin));
+                }
+            } else {
+                LOG.debugf("CORS: Origin %s not allowed by any client for %s", origin, path);
+            }
+            return;
+        }
+
+        // For /oauth/* paths, try to validate against specific client
+        String clientId = extractClientId(requestContext);
 
         // If we have a client_id, validate against that specific client
         if (clientId != null) {
@@ -124,8 +143,12 @@ public class OAuthCorsFilter implements ContainerRequestFilter, ContainerRespons
             throws IOException {
         String path = requestContext.getUriInfo().getPath();
 
-        // Only handle /oauth/* paths
-        if (!path.startsWith("oauth/") && !path.startsWith("/oauth/")) {
+        // Check if this is a path we handle
+        boolean isOAuthPath = path.startsWith("oauth/") || path.startsWith("/oauth/");
+        boolean isWellKnownPath = path.startsWith(".well-known/") || path.startsWith("/.well-known/");
+        boolean isAuthPath = path.startsWith("auth/") || path.startsWith("/auth/");
+
+        if (!isOAuthPath && !isWellKnownPath && !isAuthPath) {
             return;
         }
 
@@ -151,15 +174,35 @@ public class OAuthCorsFilter implements ContainerRequestFilter, ContainerRespons
         }
     }
 
+    private static final String CLIENT_ID_PREFIX = "oauth_";
+
     /**
-     * Extract client_id from the request.
-     * Checks query params first, then form params.
+     * Convert external client ID (with prefix) to internal format (raw TSID).
+     * Strips "oauth_" or legacy "fc_" prefix.
+     */
+    private static String toInternalClientId(String externalId) {
+        if (externalId == null) return null;
+        if (externalId.startsWith(CLIENT_ID_PREFIX)) {
+            return externalId.substring(CLIENT_ID_PREFIX.length());
+        }
+        // Also support legacy fc_ prefix for backwards compatibility
+        if (externalId.startsWith("fc_")) {
+            return externalId.substring(3);
+        }
+        return externalId;
+    }
+
+    /**
+     * Extract client_id from the request and convert to internal format.
+     * Checks query params first, then Basic auth header.
      */
     private String extractClientId(ContainerRequestContext requestContext) {
+        String clientId = null;
+
         // Try query parameter first (used by /oauth/authorize)
-        String clientId = requestContext.getUriInfo().getQueryParameters().getFirst("client_id");
+        clientId = requestContext.getUriInfo().getQueryParameters().getFirst("client_id");
         if (clientId != null && !clientId.isBlank()) {
-            return clientId;
+            return toInternalClientId(clientId);
         }
 
         // For POST requests, try to get from form params
@@ -175,7 +218,7 @@ public class OAuthCorsFilter implements ContainerRequestFilter, ContainerRespons
                 String decoded = new String(java.util.Base64.getDecoder().decode(base64));
                 int colonIdx = decoded.indexOf(':');
                 if (colonIdx > 0) {
-                    return decoded.substring(0, colonIdx);
+                    return toInternalClientId(decoded.substring(0, colonIdx));
                 }
             } catch (Exception e) {
                 // Ignore parsing errors

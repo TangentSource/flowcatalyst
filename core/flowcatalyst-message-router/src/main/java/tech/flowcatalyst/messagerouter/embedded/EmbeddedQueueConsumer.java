@@ -268,12 +268,6 @@ public class EmbeddedQueueConsumer extends AbstractQueueConsumer {
         }
 
         @Override
-        public void extendVisibility(MessagePointer message, int visibilityTimeoutSeconds) {
-            // Extend visibility to keep message invisible while processing
-            setVisibility(message, visibilityTimeoutSeconds);
-        }
-
-        @Override
         public void setVisibilityDelay(MessagePointer message, int delaySeconds) {
             // Set custom delay for retry (used when MediationResponse specifies delaySeconds)
             setVisibility(message, delaySeconds);

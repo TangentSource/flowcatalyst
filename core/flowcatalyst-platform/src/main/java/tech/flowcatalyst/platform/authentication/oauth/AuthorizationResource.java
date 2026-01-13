@@ -17,6 +17,7 @@ import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.PrincipalRepository;
 import tech.flowcatalyst.platform.principal.PrincipalType;
 import tech.flowcatalyst.platform.security.secrets.SecretService;
+import tech.flowcatalyst.platform.shared.TsidGenerator;
 
 import java.net.URI;
 import java.net.URLEncoder;
@@ -141,7 +142,10 @@ public class AuthorizationResource {
             return errorRedirect(redirectUri, "invalid_request", "client_id is required", state);
         }
 
-        Optional<OAuthClient> clientOpt = clientRepo.findByClientId(clientId);
+        // Strip prefix to get internal client ID (raw TSID)
+        String internalClientId = toInternalClientId(clientId);
+
+        Optional<OAuthClient> clientOpt = clientRepo.findByClientId(internalClientId);
         if (clientOpt.isEmpty()) {
             LOG.warnf("Authorization request with unknown client_id: %s", clientId);
             return errorRedirect(redirectUri, "invalid_client", "Unknown client_id", state);
@@ -200,24 +204,17 @@ public class AuthorizationResource {
 
         Principal principal = principalOpt.get();
 
-        // Check if user has access to at least one application associated with this OAuth client
-        if (client.hasApplicationRestrictions()) {
-            boolean hasAccess = checkUserApplicationAccess(principal, client);
-            if (!hasAccess) {
-                LOG.warnf("User %s denied access to OAuth client %s - no access to associated applications",
-                    principal.id, clientId);
-                return errorRedirect(redirectUri, "access_denied",
-                    "You don't have access to this application", state);
-            }
-        }
+        // Note: We don't check application access here - the OAuth server just authenticates
+        // and issues tokens with the user's roles. Applications check permissions themselves.
 
         // Generate authorization code
         String code = generateAuthorizationCode();
 
-        // Store authorization code
+        // Store authorization code (using internal client ID - raw TSID)
         AuthorizationCode authCode = new AuthorizationCode();
+        authCode.id = TsidGenerator.generate();
         authCode.code = code;
-        authCode.clientId = clientId;
+        authCode.clientId = internalClientId;
         authCode.principalId = principalId;
         authCode.redirectUri = redirectUri;
         authCode.scope = scope;
@@ -238,7 +235,7 @@ public class AuthorizationResource {
             callback.append("&state=").append(urlEncode(state));
         }
 
-        LOG.infof("Authorization code issued for client %s, principal %s", clientId, principalId);
+        LOG.infof("Authorization code issued for client %s, principal %s", internalClientId, principalId);
         return Response.seeOther(URI.create(callback.toString())).build();
     }
 
@@ -339,12 +336,15 @@ public class AuthorizationResource {
             }
         }
 
-        // Validate client
-        if (clientId == null || !authCode.clientId.equals(clientId)) {
+        // Strip prefix to get internal client ID (raw TSID)
+        String internalClientId = toInternalClientId(clientId);
+
+        // Validate client matches authorization code
+        if (internalClientId == null || !authCode.clientId.equals(internalClientId)) {
             return tokenError("invalid_grant", "Client mismatch");
         }
 
-        Optional<OAuthClient> clientOpt = clientRepo.findByClientId(clientId);
+        Optional<OAuthClient> clientOpt = clientRepo.findByClientId(internalClientId);
         if (clientOpt.isEmpty()) {
             return tokenError("invalid_client", "Unknown client");
         }
@@ -362,7 +362,7 @@ public class AuthorizationResource {
                 return tokenError("invalid_client", "Client authentication required");
             }
             if (!verifyClientSecret(client, clientSecret)) {
-                LOG.warnf("Invalid client secret for OAuth client: %s", clientId);
+                LOG.warnf("Invalid client secret for OAuth client: %s", internalClientId);
                 return tokenError("invalid_client", "Invalid client credentials");
             }
         }
@@ -374,7 +374,7 @@ public class AuthorizationResource {
             }
             if (!pkceService.verifyCodeChallenge(codeVerifier, authCode.codeChallenge,
                     authCode.codeChallengeMethod)) {
-                LOG.warnf("PKCE verification failed for client %s", clientId);
+                LOG.warnf("PKCE verification failed for client %s", internalClientId);
                 return tokenError("invalid_grant", "Invalid code_verifier");
             }
         }
@@ -410,16 +410,16 @@ public class AuthorizationResource {
                 principal.id,
                 email,
                 name,
-                clientId,
+                internalClientId,
                 authCode.nonce,
                 clients
             );
         }
 
-        // Generate and store refresh token
+        // Generate and store refresh token (using internal client ID)
         String refreshTokenValue = generateRefreshToken();
         String tokenFamily = generateTokenFamily();
-        storeRefreshToken(refreshTokenValue, principal.id, clientId, authCode.contextClientId,
+        storeRefreshToken(refreshTokenValue, principal.id, internalClientId, authCode.contextClientId,
             authCode.scope, tokenFamily);
 
         LOG.infof("Tokens issued for principal %s via authorization_code grant", principal.id);
@@ -536,26 +536,29 @@ public class AuthorizationResource {
             return tokenError("invalid_client", "Client credentials required");
         }
 
+        // Strip prefix to get internal client ID (raw TSID)
+        String internalClientId = toInternalClientId(clientId);
+
         // First, try the new OAuthClient-based lookup
-        Optional<OAuthClient> oauthClientOpt = clientRepo.findByClientId(clientId);
+        Optional<OAuthClient> oauthClientOpt = clientRepo.findByClientId(internalClientId);
         if (oauthClientOpt.isPresent()) {
             OAuthClient oauthClient = oauthClientOpt.get();
 
             // Must be a service account client
             if (oauthClient.serviceAccountPrincipalId == null) {
-                LOG.warnf("client_credentials grant for non-service-account OAuth client: %s", clientId);
+                LOG.warnf("client_credentials grant for non-service-account OAuth client: %s", internalClientId);
                 return tokenError("invalid_grant", "This client does not support client_credentials grant");
             }
 
             // Verify client_credentials grant is allowed
             if (!oauthClient.isGrantTypeAllowed("client_credentials")) {
-                LOG.warnf("client_credentials grant not allowed for OAuth client: %s", clientId);
+                LOG.warnf("client_credentials grant not allowed for OAuth client: %s", internalClientId);
                 return tokenError("unauthorized_client", "client_credentials grant not allowed for this client");
             }
 
             // Verify client secret
             if (!verifyClientSecret(oauthClient, clientSecret)) {
-                LOG.infof("Token request failed: invalid client secret for OAuth client: %s", clientId);
+                LOG.infof("Token request failed: invalid client secret for OAuth client: %s", internalClientId);
                 return tokenError("invalid_client", "Invalid client credentials");
             }
 
@@ -563,7 +566,7 @@ public class AuthorizationResource {
             Optional<Principal> principalOpt = principalRepo.findByIdOptional(oauthClient.serviceAccountPrincipalId);
             if (principalOpt.isEmpty()) {
                 LOG.errorf("Service account principal not found for OAuth client: %s -> %s",
-                    clientId, oauthClient.serviceAccountPrincipalId);
+                    internalClientId, oauthClient.serviceAccountPrincipalId);
                 return tokenError("invalid_client", "Invalid client credentials");
             }
 
@@ -571,20 +574,20 @@ public class AuthorizationResource {
 
             // Verify it's a service account and is active
             if (principal.type != PrincipalType.SERVICE) {
-                LOG.warnf("Token request for non-service principal via OAuth client: %s", clientId);
+                LOG.warnf("Token request for non-service principal via OAuth client: %s", internalClientId);
                 return tokenError("invalid_client", "Invalid client credentials");
             }
 
             if (!principal.active) {
-                LOG.infof("Token request failed: service account is inactive: %s", clientId);
+                LOG.infof("Token request failed: service account is inactive: %s", internalClientId);
                 return tokenError("invalid_client", "Client is disabled");
             }
 
             // Load roles
             Set<String> roles = loadRoles(principal.id);
 
-            // Issue access token
-            String token = jwtKeyService.issueAccessToken(principal.id, clientId, roles);
+            // Issue access token (using internal client ID)
+            String token = jwtKeyService.issueAccessToken(principal.id, internalClientId, roles);
 
             // Update last used on service account
             if (principal.serviceAccount != null) {
@@ -592,7 +595,7 @@ public class AuthorizationResource {
                 principalRepo.update(principal);
             }
 
-            LOG.infof("Access token issued for service account via OAuthClient: %s (principal: %s)", clientId, principal.id);
+            LOG.infof("Access token issued for service account via OAuthClient: %s (principal: %s)", internalClientId, principal.id);
 
             return Response.ok(new TokenResponse(
                 token,
@@ -719,6 +722,24 @@ public class AuthorizationResource {
     }
 
     // ==================== Helper Methods ====================
+
+    private static final String CLIENT_ID_PREFIX = "oauth_";
+
+    /**
+     * Convert external client ID (with prefix) to internal format (raw TSID).
+     * Strips "oauth_" or legacy "fc_" prefix.
+     */
+    private static String toInternalClientId(String externalId) {
+        if (externalId == null) return null;
+        if (externalId.startsWith(CLIENT_ID_PREFIX)) {
+            return externalId.substring(CLIENT_ID_PREFIX.length());
+        }
+        // Also support legacy fc_ prefix for backwards compatibility
+        if (externalId.startsWith("fc_")) {
+            return externalId.substring(3);
+        }
+        return externalId;
+    }
 
     private String generateAuthorizationCode() {
         byte[] bytes = new byte[32];
@@ -851,20 +872,14 @@ public class AuthorizationResource {
         // Load user's roles
         Set<String> roles = loadRoles(principal.id);
 
-        // ANCHOR users have access to everything
+        // ANCHOR users have access to everything - they are platform admins
         if (principal.scope == tech.flowcatalyst.platform.principal.UserScope.ANCHOR) {
-            // Still need to check they have a role for at least one app
-            for (String appId : oauthClient.applicationIds) {
-                Application app = applicationRepo.findByIdOptional(appId).orElse(null);
-                if (app != null && app.active) {
-                    // Check if user has any role for this application
-                    String appPrefix = app.code + ":";
-                    if (roles.stream().anyMatch(r -> r.startsWith(appPrefix) || r.equals(app.code))) {
-                        return true;
-                    }
-                }
-            }
-            return false;
+            return true;
+        }
+
+        // Platform super-admins also have access to everything
+        if (roles.contains("platform:super-admin")) {
+            return true;
         }
 
         // For CLIENT/PARTNER users, check each application

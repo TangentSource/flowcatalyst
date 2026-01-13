@@ -58,11 +58,18 @@ const scopeOptions = [
 ];
 
 const isValid = computed(() => {
-  return (
+  const valid = (
     form.value.clientName.trim() !== '' &&
     form.value.redirectUris.length > 0 &&
     form.value.grantTypes.length > 0
   );
+  console.log('Form validation:', {
+    clientName: form.value.clientName,
+    redirectUris: form.value.redirectUris,
+    grantTypes: form.value.grantTypes,
+    isValid: valid
+  });
+  return valid;
 });
 
 onMounted(async () => {

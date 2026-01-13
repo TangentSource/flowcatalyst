@@ -543,4 +543,49 @@ public class JwtKeyService {
             return Set.of();
         }
     }
+
+    /**
+     * Extract clients from a token.
+     * Returns list of client IDs, or ["*"] for all clients access.
+     * Returns empty list if token is invalid or has no clients claim.
+     */
+    @SuppressWarnings("unchecked")
+    public List<String> extractClients(String token) {
+        if (token == null) {
+            return List.of();
+        }
+        try {
+            io.smallrye.jwt.auth.principal.JWTParser parser = new io.smallrye.jwt.auth.principal.DefaultJWTParser();
+            org.eclipse.microprofile.jwt.JsonWebToken jwt = parser.verify(token, publicKey);
+
+            Object clientsClaim = jwt.getClaim("clients");
+            if (clientsClaim == null) {
+                return List.of();
+            }
+            if (clientsClaim instanceof List) {
+                return (List<String>) clientsClaim;
+            }
+            if (clientsClaim instanceof java.util.Collection) {
+                return new java.util.ArrayList<>((java.util.Collection<String>) clientsClaim);
+            }
+            return List.of();
+        } catch (Exception e) {
+            LOG.debugf("Failed to extract clients from token: %s", e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * Extract clients from session cookie or Authorization header.
+     */
+    public List<String> extractClients(String sessionToken, String authHeader) {
+        String token = sessionToken;
+        if (token == null && authHeader != null && authHeader.startsWith("Bearer ")) {
+            token = authHeader.substring("Bearer ".length());
+        }
+        if (token == null) {
+            return List.of();
+        }
+        return extractClients(token);
+    }
 }

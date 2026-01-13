@@ -10,10 +10,12 @@ import org.jboss.logging.Logger;
 import tech.flowcatalyst.messagerouter.health.BrokerHealthService;
 import tech.flowcatalyst.messagerouter.health.InfrastructureHealthService;
 import tech.flowcatalyst.messagerouter.health.InfrastructureHealthService.InfrastructureHealth;
+import tech.flowcatalyst.messagerouter.manager.QueueManager;
 import tech.flowcatalyst.messagerouter.model.ReadinessStatus;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Kubernetes-style health check endpoints following the standard probe patterns.
@@ -70,6 +72,9 @@ public class KubernetesHealthResource {
 
     @Inject
     BrokerHealthService brokerHealthService;
+
+    @Inject
+    QueueManager queueManager;
 
     /**
      * Liveness probe endpoint.
@@ -129,6 +134,7 @@ public class KubernetesHealthResource {
      *   <li>QueueManager is initialized</li>
      *   <li>Message broker (SQS/ActiveMQ) is accessible</li>
      *   <li>Processing pools are operational (not all stalled)</li>
+     *   <li>Queue consumers are actively polling (not stuck/dead)</li>
      * </ul>
      *
      * <p><b>Response codes:</b>
@@ -156,6 +162,27 @@ public class KubernetesHealthResource {
             List<String> brokerIssues = brokerHealthService.checkBrokerConnectivity();
             if (!brokerIssues.isEmpty()) {
                 issues.addAll(brokerIssues);
+            }
+
+            // Check 3: Consumer health (are consumers actively polling?)
+            Map<String, QueueManager.QueueConsumerHealth> consumerHealth = queueManager.getConsumerHealthStatus();
+            int totalConsumers = consumerHealth.size();
+            int unhealthyConsumers = 0;
+            for (QueueManager.QueueConsumerHealth health : consumerHealth.values()) {
+                if (!health.isHealthy()) {
+                    unhealthyConsumers++;
+                    long secondsSinceLastPoll = health.timeSinceLastPollMs() > 0
+                        ? health.timeSinceLastPollMs() / 1000 : -1;
+                    issues.add(String.format("Consumer for queue %s is unhealthy (last poll %ds ago)",
+                        health.queueIdentifier(), secondsSinceLastPoll));
+                }
+            }
+
+            // If ALL consumers are unhealthy, that's a critical issue
+            if (totalConsumers > 0 && unhealthyConsumers == totalConsumers) {
+                LOG.errorf("All %d consumers are unhealthy - system cannot process messages", totalConsumers);
+            } else if (unhealthyConsumers > 0) {
+                LOG.warnf("%d of %d consumers are unhealthy", unhealthyConsumers, totalConsumers);
             }
 
             // Determine readiness

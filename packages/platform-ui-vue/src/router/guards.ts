@@ -44,6 +44,9 @@ export async function authGuard(
 /**
  * Guard that ensures user is NOT authenticated.
  * Used for login page - redirects to dashboard if already logged in.
+ *
+ * Special handling for OAuth flow: if oauth=true is in query params and user
+ * is already authenticated, redirect to /oauth/authorize to complete the flow.
  */
 export async function guestGuard(
   to: RouteLocationNormalized,
@@ -57,8 +60,25 @@ export async function guestGuard(
     await checkSession();
   }
 
-  // If authenticated, redirect to dashboard (replace to avoid back-button loop)
+  // If authenticated, handle redirect
   if (authStore.isAuthenticated) {
+    // Check if this is an OAuth flow - redirect to /oauth/authorize to complete it
+    if (to.query.oauth === 'true') {
+      const oauthParams = new URLSearchParams();
+      const oauthFields = ['response_type', 'client_id', 'redirect_uri', 'scope', 'state',
+                          'code_challenge', 'code_challenge_method', 'nonce'];
+      for (const field of oauthFields) {
+        const value = to.query[field];
+        if (value && typeof value === 'string') {
+          oauthParams.set(field, value);
+        }
+      }
+      // Redirect to OAuth authorize - the session cookie will be sent and auth code issued
+      window.location.href = `/oauth/authorize?${oauthParams.toString()}`;
+      return;
+    }
+
+    // Normal case - redirect to dashboard (replace to avoid back-button loop)
     next({ path: '/dashboard', replace: true });
     return;
   }

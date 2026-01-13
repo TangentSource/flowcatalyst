@@ -64,7 +64,7 @@ class RoleAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/roles")
+            .get("/bff/admin/roles")
         .then()
             .statusCode(200)
             .body("roles", notNullValue())
@@ -78,7 +78,7 @@ class RoleAdminResourceTest {
         given()
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/roles")
+            .get("/bff/admin/roles")
         .then()
             .statusCode(401);
     }
@@ -92,7 +92,7 @@ class RoleAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/roles/platform:platform-admin")
+            .get("/bff/admin/roles/platform:platform-admin")
         .then()
             .statusCode(200)
             .body("name", equalTo("platform:platform-admin"))
@@ -109,7 +109,7 @@ class RoleAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/roles/nonexistent:role")
+            .get("/bff/admin/roles/nonexistent:role")
         .then()
             .statusCode(404)
             .body("message", containsString("not found"));
@@ -124,7 +124,7 @@ class RoleAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/roles/permissions")
+            .get("/bff/admin/roles/permissions")
         .then()
             .statusCode(200)
             .body("permissions", notNullValue())
@@ -137,7 +137,7 @@ class RoleAdminResourceTest {
         given()
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/roles/permissions")
+            .get("/bff/admin/roles/permissions")
         .then()
             .statusCode(401);
     }
@@ -151,7 +151,7 @@ class RoleAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/roles/permissions/platform:iam:user:create")
+            .get("/bff/admin/roles/permissions/platform:iam:user:create")
         .then()
             .statusCode(200)
             .body("permission", equalTo("platform:iam:user:create"))
@@ -168,7 +168,7 @@ class RoleAdminResourceTest {
             .header("Authorization", "Bearer " + adminToken)
             .contentType(ContentType.JSON)
         .when()
-            .get("/api/admin/roles/permissions/nonexistent:permission")
+            .get("/bff/admin/roles/permissions/nonexistent:permission")
         .then()
             .statusCode(404)
             .body("message", containsString("not found"));

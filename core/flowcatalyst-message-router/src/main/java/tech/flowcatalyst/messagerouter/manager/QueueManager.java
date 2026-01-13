@@ -358,58 +358,6 @@ public class QueueManager implements MessageCallback {
     }
 
     /**
-     * Periodically extend visibility timeout for messages still being processed.
-     * Runs every 55 seconds to prevent messages from becoming visible again
-     * while they're still actively processing.
-     * With SQS visibility timeout set to 120s, this extends at ~50s mark.
-     */
-    @Scheduled(every = "55s")
-    @RunOnVirtualThread
-    void extendMessageVisibility() {
-        if (!initialized || shutdownInProgress) {
-            return;
-        }
-
-        long now = System.currentTimeMillis();
-        int extendedCount = 0;
-
-        // Extend visibility for messages that have been processing for more than 50 seconds
-        // This ensures they don't become visible again before processing completes
-        for (Map.Entry<String, Long> entry : inPipelineTimestamps.entrySet()) {
-            String messageId = entry.getKey();
-            Long startTime = entry.getValue();
-
-            if (startTime == null) {
-                continue;
-            }
-
-            long elapsedSeconds = (now - startTime) / 1000;
-
-            // Extend visibility for messages processing longer than 50 seconds
-            // With 120s initial timeout, this gives them another 120s (total ~170s)
-            if (elapsedSeconds >= 50) {
-                MessageCallback callback = messageCallbacks.get(messageId);
-                MessagePointer message = inPipelineMap.get(messageId);
-
-                if (callback instanceof tech.flowcatalyst.messagerouter.callback.MessageVisibilityControl && message != null) {
-                    try {
-                        // Extend visibility by 120 seconds (same as queue default)
-                        ((tech.flowcatalyst.messagerouter.callback.MessageVisibilityControl) callback)
-                            .extendVisibility(message, 120);
-                        extendedCount++;
-                    } catch (Exception e) {
-                        LOG.debugf("Failed to extend visibility for message [%s]: %s", messageId, e.getMessage());
-                    }
-                }
-            }
-        }
-
-        if (extendedCount > 0) {
-            LOG.infof("Extended visibility timeout for %d messages still being processed", extendedCount);
-        }
-    }
-
-    /**
      * Periodically clean up draining pools and consumers that have finished processing
      * Runs every 10 seconds to check if old resources can be cleaned up
      */

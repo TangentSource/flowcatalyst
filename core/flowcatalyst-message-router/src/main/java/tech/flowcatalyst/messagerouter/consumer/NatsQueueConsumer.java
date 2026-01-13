@@ -266,7 +266,6 @@ public class NatsQueueConsumer extends AbstractQueueConsumer {
      *   <li>setFastFailVisibility() - Nack with 10s delay for quick retry</li>
      *   <li>resetVisibilityToDefault() - Nack with 120s delay for processing errors</li>
      *   <li>setVisibilityDelay() - Nack with custom delay</li>
-     *   <li>extendVisibility() - Extend ack wait using inProgress()</li>
      * </ul>
      */
     private class NatsMessageCallback implements MessageCallback, MessageVisibilityControl {
@@ -336,17 +335,6 @@ public class NatsQueueConsumer extends AbstractQueueConsumer {
                 LOG.infof("NATS: Custom delay (%ds) for message [%s]", effectiveDelay, message.id());
             } catch (Exception e) {
                 LOG.warnf(e, "NATS: Failed to set custom delay for message [%s]", message.id());
-            }
-        }
-
-        @Override
-        public void extendVisibility(MessagePointer message, int visibilityTimeoutSeconds) {
-            // Extend ack wait using inProgress() - resets the ack timeout timer
-            try {
-                natsMessage.inProgress();
-                LOG.debugf("NATS: Extended visibility (inProgress) for message [%s]", message.id());
-            } catch (Exception e) {
-                LOG.warnf(e, "NATS: Failed to extend visibility for message [%s]", message.id());
             }
         }
     }

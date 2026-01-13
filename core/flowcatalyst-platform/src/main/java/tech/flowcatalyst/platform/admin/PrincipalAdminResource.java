@@ -61,8 +61,8 @@ import java.util.stream.Collectors;
  *
  * All operations require admin-level permissions.
  */
-@Path("/api/admin/principals")
-@Tag(name = "Principal Admin", description = "Administrative operations for user and service account management")
+@Path("/bff/admin/principals")
+@Tag(name = "BFF - Principal Admin", description = "Administrative operations for user and service account management")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 @EmbeddedModeOnly

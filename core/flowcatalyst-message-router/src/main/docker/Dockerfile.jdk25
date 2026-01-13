@@ -1,0 +1,45 @@
+####
+# This Dockerfile builds a Docker image using Alpine base image with Java 25 JRE
+# Enables compact object headers for reduced memory footprint
+#
+# Build with:
+#   docker build -f src/main/docker/Dockerfile.jdk25 -t flowcatalyst/message-router:latest .
+#
+####
+
+FROM eclipse-temurin:25-jre-alpine
+
+# Set working directory
+WORKDIR /deployments
+
+# Copy the built application from build/quarkus-app
+COPY build/quarkus-app/lib/ /deployments/lib/
+COPY build/quarkus-app/*.jar /deployments/
+COPY build/quarkus-app/app/ /deployments/app/
+COPY build/quarkus-app/quarkus/ /deployments/quarkus/
+
+# Create non-root user (185 is standard Quarkus user)
+RUN adduser -u 185 -D appuser
+
+# Set ownership to appuser
+RUN chown -R 185:185 /deployments
+
+# Switch to non-root user
+USER 185
+
+# Expose port
+EXPOSE 8080
+
+# Health check using wget (already available in Alpine)
+HEALTHCHECK --interval=10s --timeout=5s --retries=3 --start-period=30s \
+  CMD wget -q -O- http://localhost:8080/health/ready || exit 1
+
+# JVM options:
+# -XX:+UseCompactObjectHeaders - Reduces object header from 12 to 8 bytes (Project Lilliput)
+# -XX:+UseZGC - Low-latency garbage collector (good for message processing)
+# -XX:+ZGenerational - Generational ZGC for better throughput
+# -Xmx - Set based on container memory (consider using -XX:MaxRAMPercentage instead)
+ENV JAVA_OPTS="-XX:+UseCompactObjectHeaders -XX:+UseZGC -XX:+ZGenerational"
+
+# Start the application
+ENTRYPOINT [ "sh", "-c", "java $JAVA_OPTS -cp /deployments/app:/deployments/lib/* -Dquarkus.http.host=0.0.0.0 -jar /deployments/quarkus-run.jar" ]

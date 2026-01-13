@@ -276,12 +276,5 @@ public class ActiveMqQueueConsumer extends AbstractQueueConsumer {
                 LOG.warnf(e, "Failed to set AMQ_SCHEDULED_DELAY for message [%s]", message.id());
             }
         }
-
-        @Override
-        public void extendVisibility(MessagePointer message, int visibilityTimeoutSeconds) {
-            // For ActiveMQ, we can't extend visibility like SQS
-            // This is a no-op, but log for debugging
-            LOG.debugf("extendVisibility called for ActiveMQ message [%s] - not supported, using scheduled delay instead", message.id());
-        }
     }
 }

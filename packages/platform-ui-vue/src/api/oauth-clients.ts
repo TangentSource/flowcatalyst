@@ -1,4 +1,4 @@
-import { apiFetch } from './client';
+import { bffFetch } from './client';
 
 export type ClientType = 'PUBLIC' | 'CONFIDENTIAL';
 
@@ -65,46 +65,46 @@ export const oauthClientsApi = {
     if (params?.applicationId) searchParams.set('applicationId', params.applicationId);
     if (params?.active !== undefined) searchParams.set('active', String(params.active));
     const query = searchParams.toString();
-    return apiFetch(`/admin/oauth-clients${query ? '?' + query : ''}`);
+    return bffFetch(`/admin/oauth-clients${query ? '?' + query : ''}`);
   },
 
   get(id: string): Promise<OAuthClient> {
-    return apiFetch(`/admin/oauth-clients/${id}`);
+    return bffFetch(`/admin/oauth-clients/${id}`);
   },
 
   getByClientId(clientId: string): Promise<OAuthClient> {
-    return apiFetch(`/admin/oauth-clients/by-client-id/${clientId}`);
+    return bffFetch(`/admin/oauth-clients/by-client-id/${clientId}`);
   },
 
   create(data: CreateOAuthClientRequest): Promise<CreateOAuthClientResponse> {
-    return apiFetch('/admin/oauth-clients', {
+    return bffFetch('/admin/oauth-clients', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
   update(id: string, data: UpdateOAuthClientRequest): Promise<OAuthClient> {
-    return apiFetch(`/admin/oauth-clients/${id}`, {
+    return bffFetch(`/admin/oauth-clients/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
   },
 
   rotateSecret(id: string): Promise<RotateSecretResponse> {
-    return apiFetch(`/admin/oauth-clients/${id}/rotate-secret`, {
+    return bffFetch(`/admin/oauth-clients/${id}/rotate-secret`, {
       method: 'POST',
     });
   },
 
   activate(id: string): Promise<{ message: string }> {
-    return apiFetch(`/admin/oauth-clients/${id}/activate`, { method: 'POST' });
+    return bffFetch(`/admin/oauth-clients/${id}/activate`, { method: 'POST' });
   },
 
   deactivate(id: string): Promise<{ message: string }> {
-    return apiFetch(`/admin/oauth-clients/${id}/deactivate`, { method: 'POST' });
+    return bffFetch(`/admin/oauth-clients/${id}/deactivate`, { method: 'POST' });
   },
 
   delete(id: string): Promise<void> {
-    return apiFetch(`/admin/oauth-clients/${id}`, { method: 'DELETE' });
+    return bffFetch(`/admin/oauth-clients/${id}`, { method: 'DELETE' });
   },
 };

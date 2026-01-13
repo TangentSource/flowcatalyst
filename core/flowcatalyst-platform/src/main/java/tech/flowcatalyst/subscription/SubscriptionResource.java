@@ -43,8 +43,8 @@ import java.util.List;
  *
  * All operations require messaging-level permissions.
  */
-@Path("/api/admin/subscriptions")
-@Tag(name = "Subscription Admin", description = "Administrative operations for subscription management")
+@Path("/bff/admin/subscriptions")
+@Tag(name = "BFF - Subscription Admin", description = "Administrative operations for subscription management")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 @EmbeddedModeOnly

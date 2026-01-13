@@ -104,6 +104,11 @@ import type {
   PostApiAdminOauthClientsByIdDeactivateData,
   PostApiAdminOauthClientsByIdRotateSecretData,
   PostApiAdminOauthClientsByIdRotateSecretResponse,
+  GetApiAdminPlatformCorsData,
+  PostApiAdminPlatformCorsData,
+  GetApiAdminPlatformCorsAllowedData,
+  DeleteApiAdminPlatformCorsByIdData,
+  GetApiAdminPlatformCorsByIdData,
   GetApiAdminPrincipalsData,
   GetApiAdminPrincipalsResponse,
   GetApiAdminPrincipalsCheckEmailDomainData,
@@ -1520,6 +1525,86 @@ export const postApiAdminOauthClientsByIdRotateSecret = <
     ThrowOnError
   >({
     url: "/api/admin/oauth-clients/{id}/rotate-secret",
+    ...options,
+  });
+};
+
+/**
+ * List all CORS origins
+ */
+export const getApiAdminPlatformCors = <ThrowOnError extends boolean = false>(
+  options?: Options<GetApiAdminPlatformCorsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<unknown, unknown, ThrowOnError>(
+    {
+      url: "/api/admin/platform/cors",
+      ...options,
+    },
+  );
+};
+
+/**
+ * Add a new allowed origin
+ */
+export const postApiAdminPlatformCors = <ThrowOnError extends boolean = false>(
+  options: Options<PostApiAdminPlatformCorsData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).post<unknown, unknown, ThrowOnError>(
+    {
+      url: "/api/admin/platform/cors",
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+      },
+    },
+  );
+};
+
+/**
+ * Get allowed origins (cached)
+ */
+export const getApiAdminPlatformCorsAllowed = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<GetApiAdminPlatformCorsAllowedData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<unknown, unknown, ThrowOnError>(
+    {
+      url: "/api/admin/platform/cors/allowed",
+      ...options,
+    },
+  );
+};
+
+/**
+ * Delete a CORS origin
+ */
+export const deleteApiAdminPlatformCorsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<DeleteApiAdminPlatformCorsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).delete<
+    unknown,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/admin/platform/cors/{id}",
+    ...options,
+  });
+};
+
+/**
+ * Get a CORS origin by ID
+ */
+export const getApiAdminPlatformCorsById = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<GetApiAdminPlatformCorsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<unknown, unknown, ThrowOnError>({
+    url: "/api/admin/platform/cors/{id}",
     ...options,
   });
 };

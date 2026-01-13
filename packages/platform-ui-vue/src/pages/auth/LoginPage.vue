@@ -74,7 +74,27 @@ const onCheckEmail = handleEmailSubmit(async (values) => {
 
     if (result.authMethod === 'external' && result.loginUrl) {
       step.value = 'redirecting';
-      window.location.href = result.loginUrl;
+
+      // Forward OAuth params to OIDC login if this is part of an OAuth flow
+      const currentParams = new URLSearchParams(window.location.search);
+      let redirectUrl = result.loginUrl;
+
+      if (currentParams.get('oauth') === 'true') {
+        const oauthFields = ['client_id', 'redirect_uri', 'scope', 'state',
+                            'code_challenge', 'code_challenge_method', 'nonce'];
+        const loginUrl = new URL(result.loginUrl, window.location.origin);
+
+        for (const field of oauthFields) {
+          const value = currentParams.get(field);
+          if (value) {
+            // Map to oauth_ prefix expected by /auth/oidc/login
+            loginUrl.searchParams.set('oauth_' + field, value);
+          }
+        }
+        redirectUrl = loginUrl.toString();
+      }
+
+      window.location.href = redirectUrl;
     } else {
       step.value = 'password';
     }
