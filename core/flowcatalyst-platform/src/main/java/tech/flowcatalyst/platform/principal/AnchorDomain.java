@@ -1,6 +1,5 @@
 package tech.flowcatalyst.platform.principal;
 
-import org.bson.codecs.pojo.annotations.BsonId;
 import java.time.Instant;
 
 /**
@@ -9,7 +8,6 @@ import java.time.Instant;
  */
 public class AnchorDomain {
 
-    @BsonId
     public String id;
 
     public String domain; // e.g., "flowcatalyst.tech"

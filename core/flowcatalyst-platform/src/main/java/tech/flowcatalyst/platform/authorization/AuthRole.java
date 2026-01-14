@@ -1,6 +1,5 @@
 package tech.flowcatalyst.platform.authorization;
 
-import org.bson.codecs.pojo.annotations.BsonId;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.Set;
@@ -18,7 +17,6 @@ import java.util.Set;
  */
 public class AuthRole {
 
-    @BsonId
     public String id;
 
     /**

@@ -1,8 +1,5 @@
 package tech.flowcatalyst.platform.authentication;
 
-
-
-import org.bson.codecs.pojo.annotations.BsonId;
 import java.time.Instant;
 
 /**
@@ -16,7 +13,6 @@ import java.time.Instant;
 
 public class IdpRoleMapping {
 
-    @BsonId
     public String id;
 
     /**

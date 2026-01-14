@@ -1,51 +1,42 @@
 package tech.flowcatalyst.platform.cors;
 
-import com.mongodb.client.MongoClient;
-import com.mongodb.client.MongoCollection;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.jdbi.v3.core.Jdbi;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-import static com.mongodb.client.model.Filters.eq;
-
+/**
+ * PostgreSQL implementation of CORS allowed origins repository using JDBI.
+ */
 @ApplicationScoped
 public class CorsAllowedOriginRepository {
 
     @Inject
-    MongoClient mongoClient;
-
-    @ConfigProperty(name = "quarkus.mongodb.database")
-    String database;
-
-    private MongoCollection<CorsAllowedOrigin> collection() {
-        return mongoClient.getDatabase(database).getCollection("cors_allowed_origins", CorsAllowedOrigin.class);
-    }
+    Jdbi jdbi;
 
     public Optional<CorsAllowedOrigin> findById(String id) {
-        return Optional.ofNullable(collection().find(eq("_id", id)).first());
+        return jdbi.withExtension(CorsAllowedOriginDao.class, dao -> dao.findById(id));
     }
 
     public Optional<CorsAllowedOrigin> findByOrigin(String origin) {
-        return Optional.ofNullable(collection().find(eq("origin", origin)).first());
+        return jdbi.withExtension(CorsAllowedOriginDao.class, dao -> dao.findByOrigin(origin));
     }
 
     public List<CorsAllowedOrigin> listAll() {
-        return collection().find().into(new ArrayList<>());
+        return jdbi.withExtension(CorsAllowedOriginDao.class, CorsAllowedOriginDao::listAll);
     }
 
     public boolean existsByOrigin(String origin) {
-        return collection().countDocuments(eq("origin", origin)) > 0;
+        return jdbi.withExtension(CorsAllowedOriginDao.class, dao -> dao.existsByOrigin(origin));
     }
 
     public void persist(CorsAllowedOrigin entry) {
-        collection().insertOne(entry);
+        jdbi.useExtension(CorsAllowedOriginDao.class, dao -> dao.insert(entry));
     }
 
     public void delete(CorsAllowedOrigin entry) {
-        collection().deleteOne(eq("_id", entry.id));
+        jdbi.useExtension(CorsAllowedOriginDao.class, dao -> dao.deleteById(entry.id));
     }
 }

@@ -2,7 +2,6 @@ package tech.flowcatalyst.schema;
 
 import lombok.Builder;
 import lombok.With;
-import org.bson.codecs.pojo.annotations.BsonId;
 import tech.flowcatalyst.eventtype.SchemaType;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
 
@@ -24,7 +23,6 @@ import java.time.Instant;
 @Builder(toBuilder = true)
 @With
 public record Schema(
-    @BsonId
     String id,
 
     /** Human-friendly name (optional) */

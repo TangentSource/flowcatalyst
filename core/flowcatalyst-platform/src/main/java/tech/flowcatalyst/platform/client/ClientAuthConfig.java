@@ -1,7 +1,5 @@
 package tech.flowcatalyst.platform.client;
 
-import org.bson.codecs.pojo.annotations.BsonId;
-import org.bson.codecs.pojo.annotations.BsonIgnore;
 import tech.flowcatalyst.platform.authentication.AuthProvider;
 
 import java.time.Instant;
@@ -32,7 +30,6 @@ import java.util.List;
  */
 public class ClientAuthConfig {
 
-    @BsonId
     public String id; // TSID (Crockford Base32)
 
     /**
@@ -191,7 +188,6 @@ public class ClientAuthConfig {
      * Get the effective primary client ID, supporting both old clientId and new primaryClientId fields.
      * Prefers primaryClientId if set, falls back to clientId for backwards compatibility.
      */
-    @BsonIgnore
     public String getEffectivePrimaryClientId() {
         if (primaryClientId != null) {
             return primaryClientId;
@@ -205,7 +201,6 @@ public class ClientAuthConfig {
      * For PARTNER type: granted clients
      * For ANCHOR type: empty (users have access to all via scope)
      */
-    @BsonIgnore
     public List<String> getAllAccessibleClientIds() {
         if (configType == null) {
             // Backwards compatibility: derive from clientId
@@ -236,7 +231,6 @@ public class ClientAuthConfig {
      * Get the effective config type, deriving from clientId if not explicitly set.
      * Used for backwards compatibility during migration.
      */
-    @BsonIgnore
     public AuthConfigType getEffectiveConfigType() {
         if (configType != null) {
             return configType;
@@ -248,7 +242,6 @@ public class ClientAuthConfig {
     /**
      * Check if this config has a client secret configured.
      */
-    @BsonIgnore
     public boolean hasClientSecret() {
         return oidcClientSecretRef != null && !oidcClientSecretRef.isBlank();
     }
@@ -258,7 +251,6 @@ public class ClientAuthConfig {
      * Returns the explicit pattern if set, otherwise derives from oidcIssuerUrl.
      * For Entra: replaces /organizations/ or /common/ with /{tenantId}/
      */
-    @BsonIgnore
     public String getEffectiveIssuerPattern() {
         if (oidcIssuerPattern != null && !oidcIssuerPattern.isBlank()) {
             return oidcIssuerPattern;
@@ -281,7 +273,6 @@ public class ClientAuthConfig {
      * @param tokenIssuer The issuer claim from the token
      * @return true if the issuer is valid
      */
-    @BsonIgnore
     public boolean isValidIssuer(String tokenIssuer) {
         if (tokenIssuer == null || tokenIssuer.isBlank()) {
             return false;

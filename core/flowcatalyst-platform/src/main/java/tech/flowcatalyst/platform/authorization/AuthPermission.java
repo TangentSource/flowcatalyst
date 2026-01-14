@@ -1,6 +1,5 @@
 package tech.flowcatalyst.platform.authorization;
 
-import org.bson.codecs.pojo.annotations.BsonId;
 import java.time.Instant;
 
 /**
@@ -15,7 +14,6 @@ import java.time.Instant;
  */
 public class AuthPermission {
 
-    @BsonId
     public String id;
 
     /**

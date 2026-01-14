@@ -1,8 +1,5 @@
 package tech.flowcatalyst.platform.authentication.oauth;
 
-
-
-import org.bson.codecs.pojo.annotations.BsonId;
 import java.time.Instant;
 
 /**
@@ -22,7 +19,6 @@ public class RefreshToken {
      * SHA-256 hash of the refresh token.
      * We store the hash, not the plain token, for security.
      */
-    @BsonId
     public String tokenHash;
 
     /**

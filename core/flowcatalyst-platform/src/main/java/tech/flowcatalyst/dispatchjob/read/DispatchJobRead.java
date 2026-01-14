@@ -1,9 +1,5 @@
 package tech.flowcatalyst.dispatchjob.read;
 
-
-
-import org.bson.codecs.pojo.annotations.BsonId;
-
 import java.time.Instant;
 
 /**
@@ -21,7 +17,6 @@ import java.time.Instant;
 
 public class DispatchJobRead {
 
-    @BsonId
     public String id;
 
     /** Original dispatch job ID (same as _id) */

@@ -1,6 +1,5 @@
 package tech.flowcatalyst.platform.client;
 
-import org.bson.codecs.pojo.annotations.BsonId;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -11,7 +10,6 @@ import java.util.List;
  */
 public class Client {
 
-    @BsonId
     public String id;
 
     public String name;

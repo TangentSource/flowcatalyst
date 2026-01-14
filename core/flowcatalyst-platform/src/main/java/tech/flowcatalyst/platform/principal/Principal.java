@@ -1,6 +1,5 @@
 package tech.flowcatalyst.platform.principal;
 
-import org.bson.codecs.pojo.annotations.BsonId;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -13,7 +12,6 @@ import java.util.stream.Collectors;
  */
 public class Principal {
 
-    @BsonId
     public String id;
 
     public PrincipalType type;

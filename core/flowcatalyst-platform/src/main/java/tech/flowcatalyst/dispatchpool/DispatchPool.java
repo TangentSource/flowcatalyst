@@ -2,7 +2,6 @@ package tech.flowcatalyst.dispatchpool;
 
 import lombok.Builder;
 import lombok.With;
-import org.bson.codecs.pojo.annotations.BsonId;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
 
 import java.time.Instant;
@@ -25,7 +24,6 @@ import java.time.Instant;
 @Builder(toBuilder = true)
 @With
 public record DispatchPool(
-    @BsonId
     String id,
 
     String code,

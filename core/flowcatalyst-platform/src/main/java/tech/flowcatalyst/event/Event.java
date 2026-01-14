@@ -1,8 +1,5 @@
 package tech.flowcatalyst.event;
 
-
-
-import org.bson.codecs.pojo.annotations.BsonId;
 import java.time.Instant;
 import java.util.List;
 
@@ -26,7 +23,6 @@ public class Event {
     /**
      * TSID - unique identifier for the event (Crockford Base32 string)
      */
-    @BsonId
     public String id;
 
     /**

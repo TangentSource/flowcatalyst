@@ -1,9 +1,5 @@
 package tech.flowcatalyst.event.read;
 
-
-
-import org.bson.codecs.pojo.annotations.BsonId;
-
 import java.time.Instant;
 import java.util.List;
 
@@ -16,7 +12,6 @@ import java.util.List;
 
 public class EventRead {
 
-    @BsonId
     public String id;
 
     /** Original event ID (same as _id) */

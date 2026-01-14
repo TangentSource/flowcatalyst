@@ -2,7 +2,6 @@ package tech.flowcatalyst.subscription;
 
 import lombok.Builder;
 import lombok.With;
-import org.bson.codecs.pojo.annotations.BsonId;
 import tech.flowcatalyst.dispatch.DispatchMode;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
 
@@ -23,7 +22,6 @@ import java.util.List;
 @Builder(toBuilder = true)
 @With
 public record Subscription(
-    @BsonId
     String id,
 
     /** Unique code within client scope (or anchor-level if clientId is null) */

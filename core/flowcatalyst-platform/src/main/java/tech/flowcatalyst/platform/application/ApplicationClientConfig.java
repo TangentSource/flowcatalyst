@@ -1,6 +1,5 @@
 package tech.flowcatalyst.platform.application;
 
-import org.bson.codecs.pojo.annotations.BsonId;
 import java.time.Instant;
 import java.util.Map;
 
@@ -14,7 +13,6 @@ import java.util.Map;
  */
 public class ApplicationClientConfig {
 
-    @BsonId
     public String id;
 
     public String applicationId;

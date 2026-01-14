@@ -1,8 +1,5 @@
 package tech.flowcatalyst.platform.audit;
 
-
-
-import org.bson.codecs.pojo.annotations.BsonId;
 import java.time.Instant;
 
 /**
@@ -14,7 +11,6 @@ import java.time.Instant;
 
 public class AuditLog {
 
-    @BsonId
     public String id;
 
     /**

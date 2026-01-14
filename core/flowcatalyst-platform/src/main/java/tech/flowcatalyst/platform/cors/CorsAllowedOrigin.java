@@ -1,7 +1,5 @@
 package tech.flowcatalyst.platform.cors;
 
-import org.bson.codecs.pojo.annotations.BsonId;
-
 import java.time.Instant;
 
 /**
@@ -12,7 +10,6 @@ import java.time.Instant;
  */
 public class CorsAllowedOrigin {
 
-    @BsonId
     public String id;
 
     /**

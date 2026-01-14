@@ -29,9 +29,21 @@ dependencies {
     // Core Quarkus
     // ==========================================================================
     implementation("io.quarkus:quarkus-arc")
-    implementation("io.quarkus:quarkus-mongodb-client")
     implementation("io.quarkus:quarkus-rest")
     implementation("io.quarkus:quarkus-rest-jackson")
+
+    // ==========================================================================
+    // Database - PostgreSQL + JDBI
+    // ==========================================================================
+    implementation("io.quarkus:quarkus-agroal")           // Connection pool
+    implementation("io.quarkus:quarkus-jdbc-postgresql")  // PostgreSQL driver
+    implementation("org.jdbi:jdbi3-core:3.45.0")
+    implementation("org.jdbi:jdbi3-sqlobject:3.45.0")
+    implementation("org.jdbi:jdbi3-postgres:3.45.0")
+    implementation("org.jdbi:jdbi3-jackson2:3.45.0")      // For JSONB mapping
+
+    // Keep MongoDB temporarily for data migration
+    implementation("io.quarkus:quarkus-mongodb-client")
 
     // ==========================================================================
     // Security
@@ -129,7 +141,8 @@ dependencies {
     testImplementation("io.rest-assured:rest-assured")
     testImplementation("org.awaitility:awaitility:4.2.0")
     testImplementation("org.testcontainers:testcontainers:1.19.7")
-    testImplementation("org.testcontainers:mongodb:1.19.7")
+    testImplementation("org.testcontainers:postgresql:1.19.7")
+    testImplementation("org.testcontainers:mongodb:1.19.7")  // Keep temporarily for migration testing
     testImplementation("io.quarkus:quarkus-test-common")
     testImplementation("org.assertj:assertj-core:3.24.2")
 }

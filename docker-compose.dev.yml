@@ -1,10 +1,47 @@
 # Local development environment for FlowCatalyst
 # Usage: docker compose -f docker-compose.dev.yml up -d
 #
-# Single-node MongoDB Replica Set for Change Streams support
-# Connection string: mongodb://localhost:27017/?replicaSet=rs0&directConnection=true
+# PostgreSQL: jdbc:postgresql://localhost:5432/flowcatalyst
+# MongoDB (for migration): mongodb://localhost:27017/?replicaSet=rs0&directConnection=true
 
 services:
+  # ============================================================================
+  # PostgreSQL - Primary Database
+  # ============================================================================
+  postgres:
+    image: postgres:18-alpine
+    container_name: flowcatalyst-postgres
+    environment:
+      POSTGRES_DB: flowcatalyst
+      POSTGRES_USER: flowcatalyst
+      POSTGRES_PASSWORD: flowcatalyst
+    ports:
+      - "5432:5432"
+    volumes:
+      - flowcatalyst-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flowcatalyst -d flowcatalyst"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Optional: pgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: flowcatalyst-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@flowcatalyst.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    profiles:
+      - tools
+
+  # ============================================================================
+  # MongoDB - Kept temporarily for data migration
+  # ============================================================================
   mongo:
     image: mongo:7
     container_name: flowcatalyst-mongo
@@ -19,6 +56,8 @@ services:
       timeout: 30s
       start_period: 10s
       retries: 30
+    profiles:
+      - migration
 
   # Optional: Mongo Express for database management
   mongo-express:
@@ -33,8 +72,11 @@ services:
     depends_on:
       - mongo
     profiles:
+      - migration
       - tools
 
 volumes:
+  flowcatalyst-postgres-data:
+    name: flowcatalyst-postgres-data
   flowcatalyst-mongo-data:
     name: flowcatalyst-mongo-data

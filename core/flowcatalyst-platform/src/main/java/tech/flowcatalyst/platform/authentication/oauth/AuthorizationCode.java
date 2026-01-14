@@ -1,8 +1,5 @@
 package tech.flowcatalyst.platform.authentication.oauth;
 
-
-
-import org.bson.codecs.pojo.annotations.BsonId;
 import java.time.Instant;
 
 /**
@@ -19,7 +16,6 @@ public class AuthorizationCode {
     /**
      * MongoDB document ID.
      */
-    @BsonId
     public String id;
 
     /**

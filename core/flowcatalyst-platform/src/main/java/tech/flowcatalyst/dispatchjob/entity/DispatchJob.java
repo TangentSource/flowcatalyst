@@ -1,8 +1,5 @@
 package tech.flowcatalyst.dispatchjob.entity;
 
-
-
-import org.bson.codecs.pojo.annotations.BsonId;
 import tech.flowcatalyst.dispatch.DispatchMode;
 import tech.flowcatalyst.dispatchjob.model.DispatchKind;
 import tech.flowcatalyst.dispatchjob.model.DispatchProtocol;
@@ -61,7 +58,6 @@ import java.util.*;
 
 public class DispatchJob {
 
-    @BsonId
     public String id;
 
     public String externalId;

@@ -1,8 +1,5 @@
 package tech.flowcatalyst.platform.application;
 
-import org.bson.codecs.pojo.annotations.BsonId;
-import org.bson.codecs.pojo.annotations.BsonIgnore;
-
 import java.time.Instant;
 
 /**
@@ -30,7 +27,6 @@ import java.time.Instant;
  */
 public class Application {
 
-    @BsonId
     public String id;
 
     /**
@@ -97,7 +93,6 @@ public class Application {
     /**
      * Check if this is a user-facing application.
      */
-    @BsonIgnore
     public boolean isApplication() {
         return type == ApplicationType.APPLICATION;
     }
@@ -105,7 +100,6 @@ public class Application {
     /**
      * Check if this is a third-party integration.
      */
-    @BsonIgnore
     public boolean isIntegration() {
         return type == ApplicationType.INTEGRATION;
     }

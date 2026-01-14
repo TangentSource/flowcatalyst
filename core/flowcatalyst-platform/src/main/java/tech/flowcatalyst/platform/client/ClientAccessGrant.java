@@ -1,6 +1,5 @@
 package tech.flowcatalyst.platform.client;
 
-import org.bson.codecs.pojo.annotations.BsonId;
 import java.time.Instant;
 
 /**
@@ -9,7 +8,6 @@ import java.time.Instant;
  */
 public class ClientAccessGrant {
 
-    @BsonId
     public String id;
 
     public String principalId;

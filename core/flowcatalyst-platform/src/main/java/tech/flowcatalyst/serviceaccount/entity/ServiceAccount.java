@@ -1,8 +1,5 @@
 package tech.flowcatalyst.serviceaccount.entity;
 
-
-
-import org.bson.codecs.pojo.annotations.BsonId;
 import tech.flowcatalyst.platform.principal.Principal;
 
 import java.time.Instant;
@@ -30,7 +27,6 @@ import java.util.stream.Collectors;
 
 public class ServiceAccount {
 
-    @BsonId
     public String id;
 
     /**

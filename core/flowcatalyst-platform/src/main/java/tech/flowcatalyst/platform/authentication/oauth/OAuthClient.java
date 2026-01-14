@@ -1,10 +1,5 @@
 package tech.flowcatalyst.platform.authentication.oauth;
 
-
-
-import org.bson.codecs.pojo.annotations.BsonId;
-import org.bson.codecs.pojo.annotations.BsonIgnore;
-
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -32,7 +27,6 @@ import java.util.List;
 
 public class OAuthClient {
 
-    @BsonId
     public String id;
 
     /**
@@ -128,7 +122,6 @@ public class OAuthClient {
     /**
      * Check if a redirect URI is allowed for this client.
      */
-    @BsonIgnore
     public boolean isRedirectUriAllowed(String uri) {
         if (redirectUris == null || uri == null) {
             return false;
@@ -139,7 +132,6 @@ public class OAuthClient {
     /**
      * Check if a CORS origin is allowed for this client.
      */
-    @BsonIgnore
     public boolean isOriginAllowed(String origin) {
         if (allowedOrigins == null || origin == null) {
             return false;
@@ -150,7 +142,6 @@ public class OAuthClient {
     /**
      * Check if a grant type is allowed for this client.
      */
-    @BsonIgnore
     public boolean isGrantTypeAllowed(String grantType) {
         if (grantTypes == null || grantType == null) {
             return false;
@@ -161,7 +152,6 @@ public class OAuthClient {
     /**
      * Check if this client is associated with any applications.
      */
-    @BsonIgnore
     public boolean hasApplicationRestrictions() {
         return applicationIds != null && !applicationIds.isEmpty();
     }
@@ -169,7 +159,6 @@ public class OAuthClient {
     /**
      * Check if this client is associated with a specific application.
      */
-    @BsonIgnore
     public boolean isAssociatedWithApplication(String applicationId) {
         if (applicationIds == null || applicationId == null) {
             return false;
@@ -180,7 +169,6 @@ public class OAuthClient {
     /**
      * Check if this is a public client (no secret).
      */
-    @BsonIgnore
     public boolean isPublic() {
         return clientType == ClientType.PUBLIC;
     }
@@ -188,7 +176,6 @@ public class OAuthClient {
     /**
      * Check if this is a confidential client (has secret).
      */
-    @BsonIgnore
     public boolean isConfidential() {
         return clientType == ClientType.CONFIDENTIAL;
     }
@@ -196,7 +183,6 @@ public class OAuthClient {
     /**
      * Check if this is a service account client (for machine-to-machine auth).
      */
-    @BsonIgnore
     public boolean isServiceAccountClient() {
         return serviceAccountPrincipalId != null;
     }
@@ -204,7 +190,6 @@ public class OAuthClient {
     /**
      * Check if this is a user-facing application client.
      */
-    @BsonIgnore
     public boolean isApplicationClient() {
         return serviceAccountPrincipalId == null;
     }

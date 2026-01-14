@@ -1,9 +1,5 @@
 package tech.flowcatalyst.platform.authentication.oidc;
 
-
-
-import org.bson.codecs.pojo.annotations.BsonId;
-
 import java.time.Instant;
 
 /**
@@ -14,7 +10,6 @@ import java.time.Instant;
 
 public class OidcLoginState {
 
-    @BsonId
     public String state; // Random state parameter (also used as ID)
 
     /**
