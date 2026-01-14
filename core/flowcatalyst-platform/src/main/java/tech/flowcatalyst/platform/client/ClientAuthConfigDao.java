@@ -2,7 +2,7 @@ package tech.flowcatalyst.platform.client;
 
 import org.jdbi.v3.sqlobject.config.RegisterRowMapper;
 import org.jdbi.v3.sqlobject.customizer.Bind;
-import org.jdbi.v3.sqlobject.customizer.BindBean;
+import org.jdbi.v3.sqlobject.customizer.BindFields;
 import org.jdbi.v3.sqlobject.statement.SqlQuery;
 import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 
@@ -48,7 +48,7 @@ public interface ClientAuthConfigDao {
             :additionalClientIds, :grantedClientIds, :authProvider, :oidcIssuerUrl, :oidcClientId,
             :oidcClientSecretRef, :oidcMultiTenant, :oidcIssuerPattern, :createdAt, :updatedAt)
         """)
-    void insert(@BindBean ClientAuthConfig config,
+    void insert(@BindFields ClientAuthConfig config,
                 @Bind("configType") String configType,
                 @Bind("authProvider") String authProvider,
                 @Bind("additionalClientIds") String[] additionalClientIds,
@@ -63,7 +63,7 @@ public interface ClientAuthConfigDao {
             oidc_issuer_pattern = :oidcIssuerPattern, updated_at = :updatedAt
         WHERE id = :id
         """)
-    void update(@BindBean ClientAuthConfig config,
+    void update(@BindFields ClientAuthConfig config,
                 @Bind("configType") String configType,
                 @Bind("authProvider") String authProvider,
                 @Bind("additionalClientIds") String[] additionalClientIds,

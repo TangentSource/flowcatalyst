@@ -67,6 +67,10 @@ dist/
 .vite/
 .turbo/
 
+# Generated OpenAPI specs
+packages/*/openapi/
+core/*/openapi/
+
 # Angular
 .angular/
 

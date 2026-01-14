@@ -2,7 +2,7 @@ package tech.flowcatalyst.platform.audit;
 
 import org.jdbi.v3.sqlobject.config.RegisterRowMapper;
 import org.jdbi.v3.sqlobject.customizer.Bind;
-import org.jdbi.v3.sqlobject.customizer.BindBean;
+import org.jdbi.v3.sqlobject.customizer.BindFields;
 import org.jdbi.v3.sqlobject.statement.SqlQuery;
 import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 
@@ -49,5 +49,5 @@ public interface AuditLogDao {
         INSERT INTO audit_logs (id, entity_type, entity_id, operation, operation_json, principal_id, performed_at)
         VALUES (:id, :entityType, :entityId, :operation, :operationJson::jsonb, :principalId, :performedAt)
         """)
-    void insert(@BindBean AuditLog log);
+    void insert(@BindFields AuditLog log);
 }

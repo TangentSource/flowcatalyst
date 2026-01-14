@@ -35,7 +35,7 @@ import java.util.List;
  * - Only Super Admins should have access to these endpoints
  * - Changes affect all users from the domain immediately
  */
-@Path("/bff/admin/anchor-domains")
+@Path("/api/admin/anchor-domains")
 @Tag(name = "BFF - Anchor Domain Admin", description = "Manage anchor domains (platform operator domains)")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)

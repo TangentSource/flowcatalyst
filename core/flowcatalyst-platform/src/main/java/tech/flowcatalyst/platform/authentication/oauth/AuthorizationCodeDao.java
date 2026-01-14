@@ -2,7 +2,7 @@ package tech.flowcatalyst.platform.authentication.oauth;
 
 import org.jdbi.v3.sqlobject.config.RegisterRowMapper;
 import org.jdbi.v3.sqlobject.customizer.Bind;
-import org.jdbi.v3.sqlobject.customizer.BindBean;
+import org.jdbi.v3.sqlobject.customizer.BindFields;
 import org.jdbi.v3.sqlobject.statement.SqlQuery;
 import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 
@@ -28,7 +28,7 @@ public interface AuthorizationCodeDao {
             :scope, :codeChallenge, :codeChallengeMethod, :nonce, :state, :contextClientId,
             :used, :expiresAt, :createdAt)
         """)
-    void insert(@BindBean AuthorizationCode authCode);
+    void insert(@BindFields AuthorizationCode authCode);
 
     @SqlUpdate("UPDATE authorization_codes SET used = true WHERE code = :code")
     int markAsUsed(@Bind("code") String code);

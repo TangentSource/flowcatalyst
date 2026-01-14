@@ -1,4 +1,4 @@
-import { bffFetch } from './client';
+import { apiFetch } from './client';
 
 export interface CorsOrigin {
   id: string;
@@ -20,26 +20,26 @@ export interface CreateCorsOriginRequest {
 
 export const corsApi = {
   list(): Promise<CorsOriginListResponse> {
-    return bffFetch('/admin/platform/cors');
+    return apiFetch('/admin/platform/cors');
   },
 
   get(id: string): Promise<CorsOrigin> {
-    return bffFetch(`/admin/platform/cors/${id}`);
+    return apiFetch(`/admin/platform/cors/${id}`);
   },
 
   getAllowed(): Promise<{ origins: string[] }> {
-    return bffFetch('/admin/platform/cors/allowed');
+    return apiFetch('/admin/platform/cors/allowed');
   },
 
   create(data: CreateCorsOriginRequest): Promise<CorsOrigin> {
-    return bffFetch('/admin/platform/cors', {
+    return apiFetch('/admin/platform/cors', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
   delete(id: string): Promise<void> {
-    return bffFetch(`/admin/platform/cors/${id}`, {
+    return apiFetch(`/admin/platform/cors/${id}`, {
       method: 'DELETE',
     });
   },

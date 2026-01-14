@@ -2,7 +2,7 @@ package tech.flowcatalyst.platform.application;
 
 import org.jdbi.v3.sqlobject.config.RegisterRowMapper;
 import org.jdbi.v3.sqlobject.customizer.Bind;
-import org.jdbi.v3.sqlobject.customizer.BindBean;
+import org.jdbi.v3.sqlobject.customizer.BindFields;
 import org.jdbi.v3.sqlobject.statement.SqlQuery;
 import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 
@@ -48,7 +48,7 @@ public interface ApplicationClientConfigDao {
         VALUES (:id, :applicationId, :clientId, :enabled, :baseUrlOverride,
             :configJson::jsonb, :createdAt, :updatedAt)
         """)
-    void insert(@BindBean ApplicationClientConfig config, @Bind("configJson") String configJson);
+    void insert(@BindFields ApplicationClientConfig config, @Bind("configJson") String configJson);
 
     @SqlUpdate("""
         UPDATE application_client_configs SET application_id = :applicationId, client_id = :clientId,
@@ -56,7 +56,7 @@ public interface ApplicationClientConfigDao {
             updated_at = :updatedAt
         WHERE id = :id
         """)
-    void update(@BindBean ApplicationClientConfig config, @Bind("configJson") String configJson);
+    void update(@BindFields ApplicationClientConfig config, @Bind("configJson") String configJson);
 
     @SqlUpdate("DELETE FROM application_client_configs WHERE id = :id")
     int deleteById(@Bind("id") String id);

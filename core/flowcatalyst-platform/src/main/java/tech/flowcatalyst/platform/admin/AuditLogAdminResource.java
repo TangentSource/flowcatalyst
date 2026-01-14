@@ -27,7 +27,7 @@ import java.util.Map;
  * Provides read-only access to the audit trail of operations performed in the system.
  * Audit logs track entity changes with full operation payloads for compliance and debugging.
  */
-@Path("/bff/admin/audit-logs")
+@Path("/api/admin/audit-logs")
 @Tag(name = "BFF - Audit Log Admin", description = "Audit log viewing endpoints")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)

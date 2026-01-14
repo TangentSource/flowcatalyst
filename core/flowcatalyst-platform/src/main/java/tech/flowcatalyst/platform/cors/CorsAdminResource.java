@@ -26,7 +26,7 @@ import java.util.Set;
  * Requires platform:super-admin or platform:iam-admin role.
  * Located under Platform Identity & Access.
  */
-@Path("/bff/admin/platform/cors")
+@Path("/api/admin/platform/cors")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 @Tag(name = "BFF - Platform IAM - CORS", description = "Manage allowed CORS origins")

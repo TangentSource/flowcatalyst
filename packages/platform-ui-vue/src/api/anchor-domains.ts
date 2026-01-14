@@ -1,4 +1,4 @@
-import { bffFetch } from './client';
+import { apiFetch } from './client';
 
 export interface AnchorDomain {
   id: string;
@@ -30,26 +30,26 @@ export interface DeleteAnchorDomainResponse {
 
 export const anchorDomainsApi = {
   list(): Promise<AnchorDomainListResponse> {
-    return bffFetch('/admin/anchor-domains');
+    return apiFetch('/admin/anchor-domains');
   },
 
   get(id: string): Promise<AnchorDomain> {
-    return bffFetch(`/admin/anchor-domains/${id}`);
+    return apiFetch(`/admin/anchor-domains/${id}`);
   },
 
   check(domain: string): Promise<DomainCheckResponse> {
-    return bffFetch(`/admin/anchor-domains/check/${encodeURIComponent(domain)}`);
+    return apiFetch(`/admin/anchor-domains/check/${encodeURIComponent(domain)}`);
   },
 
   create(data: CreateAnchorDomainRequest): Promise<AnchorDomain> {
-    return bffFetch('/admin/anchor-domains', {
+    return apiFetch('/admin/anchor-domains', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
   delete(id: string): Promise<DeleteAnchorDomainResponse> {
-    return bffFetch(`/admin/anchor-domains/${id}`, {
+    return apiFetch(`/admin/anchor-domains/${id}`, {
       method: 'DELETE',
     });
   },

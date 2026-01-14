@@ -2,6 +2,7 @@ package tech.flowcatalyst.platform.cors.operations.deleteorigin;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import tech.flowcatalyst.platform.authentication.oauth.OAuthClientRepository;
 import tech.flowcatalyst.platform.common.ExecutionContext;
 import tech.flowcatalyst.platform.common.Result;
 import tech.flowcatalyst.platform.common.UnitOfWork;
@@ -10,6 +11,7 @@ import tech.flowcatalyst.platform.cors.CorsAllowedOrigin;
 import tech.flowcatalyst.platform.cors.CorsAllowedOriginRepository;
 import tech.flowcatalyst.platform.cors.events.CorsOriginDeleted;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -20,6 +22,9 @@ public class DeleteCorsOriginUseCase {
 
     @Inject
     CorsAllowedOriginRepository repository;
+
+    @Inject
+    OAuthClientRepository oauthClientRepository;
 
     @Inject
     UnitOfWork unitOfWork;
@@ -41,6 +46,17 @@ public class DeleteCorsOriginUseCase {
                 "ORIGIN_NOT_FOUND",
                 "CORS origin not found",
                 Map.of("originId", command.originId())
+            ));
+        }
+
+        // Check if this origin is used by any OAuth client
+        List<String> usingClients = oauthClientRepository.findClientNamesUsingOrigin(entry.origin);
+        if (!usingClients.isEmpty()) {
+            String clientNames = String.join(", ", usingClients);
+            return Result.failure(new UseCaseError.ValidationError(
+                "ORIGIN_IN_USE",
+                "Cannot delete origin that is used by OAuth clients: " + clientNames,
+                Map.of("origin", entry.origin, "clients", usingClients)
             ));
         }
 

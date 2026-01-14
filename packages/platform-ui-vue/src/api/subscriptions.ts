@@ -1,4 +1,4 @@
-import { bffFetch } from './client';
+import { apiFetch } from './client';
 
 export type SubscriptionStatus = 'ACTIVE' | 'PAUSED';
 export type SubscriptionSource = 'API' | 'UI';
@@ -101,41 +101,41 @@ export const subscriptionsApi = {
     if (filters.anchorLevel !== undefined) params.set('anchorLevel', String(filters.anchorLevel));
 
     const query = params.toString();
-    return bffFetch(`/admin/subscriptions${query ? `?${query}` : ''}`);
+    return apiFetch(`/admin/subscriptions${query ? `?${query}` : ''}`);
   },
 
   get(id: string): Promise<Subscription> {
-    return bffFetch(`/admin/subscriptions/${id}`);
+    return apiFetch(`/admin/subscriptions/${id}`);
   },
 
   create(data: CreateSubscriptionRequest): Promise<Subscription> {
-    return bffFetch('/admin/subscriptions', {
+    return apiFetch('/admin/subscriptions', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
   update(id: string, data: UpdateSubscriptionRequest): Promise<Subscription> {
-    return bffFetch(`/admin/subscriptions/${id}`, {
+    return apiFetch(`/admin/subscriptions/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
   },
 
   delete(id: string): Promise<StatusResponse> {
-    return bffFetch(`/admin/subscriptions/${id}`, {
+    return apiFetch(`/admin/subscriptions/${id}`, {
       method: 'DELETE',
     });
   },
 
   pause(id: string): Promise<StatusResponse> {
-    return bffFetch(`/admin/subscriptions/${id}/pause`, {
+    return apiFetch(`/admin/subscriptions/${id}/pause`, {
       method: 'POST',
     });
   },
 
   resume(id: string): Promise<StatusResponse> {
-    return bffFetch(`/admin/subscriptions/${id}/resume`, {
+    return apiFetch(`/admin/subscriptions/${id}/resume`, {
       method: 'POST',
     });
   },

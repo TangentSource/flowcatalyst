@@ -33,10 +33,11 @@ dependencies {
     implementation("io.quarkus:quarkus-rest-jackson")
 
     // ==========================================================================
-    // Database - PostgreSQL + JDBI
+    // Database - PostgreSQL + JDBI + Flyway
     // ==========================================================================
     implementation("io.quarkus:quarkus-agroal")           // Connection pool
     implementation("io.quarkus:quarkus-jdbc-postgresql")  // PostgreSQL driver
+    implementation("io.quarkus:quarkus-flyway")           // Schema migrations
     implementation("org.jdbi:jdbi3-core:3.45.0")
     implementation("org.jdbi:jdbi3-sqlobject:3.45.0")
     implementation("org.jdbi:jdbi3-postgres:3.45.0")

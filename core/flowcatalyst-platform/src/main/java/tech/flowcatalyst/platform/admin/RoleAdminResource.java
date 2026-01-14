@@ -42,7 +42,7 @@ import java.util.Set;
  * Permissions are code-first (defined in Java code) and cannot be created via API.
  * External applications can register their own permissions via SDK.
  */
-@Path("/bff/admin/roles")
+@Path("/api/admin/roles")
 @Tag(name = "BFF - Role Admin", description = "Manage roles and view permissions")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)

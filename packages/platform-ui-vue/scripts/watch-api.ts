@@ -3,6 +3,9 @@
 /**
  * Watch for Java backend changes and regenerate API types.
  * Uses Node.js native APIs for file watching and child processes.
+ *
+ * Uses the live OpenAPI endpoint (http://localhost:8080/q/openapi) for
+ * real-time type generation during development.
  */
 
 import { watch } from "fs";
@@ -21,9 +24,10 @@ async function generateTypes(): Promise<void> {
   const start = performance.now();
 
   try {
-    console.log("Regenerating API types...");
+    console.log("Regenerating API types from live endpoint...");
 
-    const proc = spawn("npm", ["run", "api:generate"], {
+    // Use live endpoint for dev watch mode
+    const proc = spawn("npm", ["run", "api:generate:live"], {
       stdio: "inherit",
     });
 

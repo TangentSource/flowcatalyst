@@ -2,7 +2,7 @@ package tech.flowcatalyst.platform.authentication.oidc;
 
 import org.jdbi.v3.sqlobject.config.RegisterRowMapper;
 import org.jdbi.v3.sqlobject.customizer.Bind;
-import org.jdbi.v3.sqlobject.customizer.BindBean;
+import org.jdbi.v3.sqlobject.customizer.BindFields;
 import org.jdbi.v3.sqlobject.statement.SqlQuery;
 import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 
@@ -25,7 +25,7 @@ public interface OidcLoginStateDao {
             :returnUrl, :oauthClientId, :oauthRedirectUri, :oauthScope, :oauthState,
             :oauthNonce, :oauthCodeChallenge, :oauthCodeChallengeMethod, :expiresAt, :createdAt)
         """)
-    void insert(@BindBean OidcLoginState loginState);
+    void insert(@BindFields OidcLoginState loginState);
 
     @SqlUpdate("DELETE FROM oidc_login_states WHERE state = :state")
     int deleteByState(@Bind("state") String state);

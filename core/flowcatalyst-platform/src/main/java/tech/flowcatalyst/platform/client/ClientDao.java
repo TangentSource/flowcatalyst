@@ -2,7 +2,7 @@ package tech.flowcatalyst.platform.client;
 
 import org.jdbi.v3.sqlobject.config.RegisterRowMapper;
 import org.jdbi.v3.sqlobject.customizer.Bind;
-import org.jdbi.v3.sqlobject.customizer.BindBean;
+import org.jdbi.v3.sqlobject.customizer.BindFields;
 import org.jdbi.v3.sqlobject.statement.SqlQuery;
 import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 
@@ -39,7 +39,7 @@ public interface ClientDao {
         VALUES (:id, :name, :identifier, :status, :statusReason, :statusChangedAt,
                 :notes::jsonb, :createdAt, :updatedAt)
         """)
-    void insert(@BindBean Client client, @Bind("notes") String notesJson);
+    void insert(@BindFields Client client, @Bind("notes") String notesJson);
 
     @SqlUpdate("""
         UPDATE clients SET name = :name, identifier = :identifier, status = :status,
@@ -47,7 +47,7 @@ public interface ClientDao {
                notes = :notes::jsonb, updated_at = :updatedAt
         WHERE id = :id
         """)
-    void update(@BindBean Client client, @Bind("notes") String notesJson);
+    void update(@BindFields Client client, @Bind("notes") String notesJson);
 
     @SqlUpdate("DELETE FROM clients WHERE id = :id")
     int deleteById(@Bind("id") String id);

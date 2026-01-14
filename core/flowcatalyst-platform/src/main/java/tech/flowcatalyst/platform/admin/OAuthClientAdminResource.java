@@ -22,6 +22,8 @@ import tech.flowcatalyst.platform.authentication.JwtKeyService;
 import tech.flowcatalyst.platform.authentication.oauth.OAuthClient;
 import tech.flowcatalyst.platform.authentication.oauth.OAuthClient.ClientType;
 import tech.flowcatalyst.platform.authentication.oauth.OAuthClientRepository;
+import tech.flowcatalyst.platform.cors.CorsAllowedOrigin;
+import tech.flowcatalyst.platform.cors.CorsAllowedOriginRepository;
 import tech.flowcatalyst.platform.security.secrets.SecretService;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
 
@@ -44,7 +46,7 @@ import java.util.stream.Collectors;
  *
  * <p>All operations require admin-level permissions.
  */
-@Path("/bff/admin/oauth-clients")
+@Path("/api/admin/oauth-clients")
 @Tag(name = "BFF - OAuth Client Admin", description = "Administrative operations for OAuth2 client management")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -59,6 +61,9 @@ public class OAuthClientAdminResource {
 
     @Inject
     ApplicationRepository applicationRepo;
+
+    @Inject
+    CorsAllowedOriginRepository corsOriginRepo;
 
     @Inject
     SecretService secretService;
@@ -285,6 +290,9 @@ public class OAuthClientAdminResource {
 
         clientRepo.persist(client);
 
+        // Auto-add CORS origins from redirect URIs
+        ensureCorsOriginsForRedirectUris(client.redirectUris, client.clientName);
+
         LOG.infof("OAuth client created: %s (%s) by principal %s",
             client.clientName, client.clientId, adminPrincipalId);
 
@@ -346,6 +354,8 @@ public class OAuthClientAdminResource {
                     .build();
             }
             client.redirectUris = new ArrayList<>(request.redirectUris());
+            // Auto-add CORS origins from new redirect URIs
+            ensureCorsOriginsForRedirectUris(client.redirectUris, client.clientName);
         }
         if (request.allowedOrigins() != null) {
             // Validate allowed origins use HTTPS (except localhost)
@@ -684,6 +694,67 @@ public class OAuthClientAdminResource {
             if (error != null) return error;
         }
         return null;
+    }
+
+    /**
+     * Extract origin from a URL (protocol + host + port).
+     */
+    private String extractOrigin(String url) {
+        try {
+            java.net.URI uri = java.net.URI.create(url);
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+            int port = uri.getPort();
+
+            if (scheme == null || host == null) {
+                return null;
+            }
+
+            StringBuilder origin = new StringBuilder();
+            origin.append(scheme.toLowerCase()).append("://").append(host.toLowerCase());
+
+            // Include port only if non-standard
+            if (port != -1) {
+                boolean isStandardPort = ("http".equals(scheme) && port == 80)
+                    || ("https".equals(scheme) && port == 443);
+                if (!isStandardPort) {
+                    origin.append(":").append(port);
+                }
+            }
+
+            return origin.toString();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Automatically add origins from redirect URIs to CORS allowed origins.
+     * Skips origins that already exist.
+     */
+    private void ensureCorsOriginsForRedirectUris(List<String> redirectUris, String clientName) {
+        if (redirectUris == null || redirectUris.isEmpty()) {
+            return;
+        }
+
+        Set<String> origins = new HashSet<>();
+        for (String uri : redirectUris) {
+            String origin = extractOrigin(uri);
+            if (origin != null) {
+                origins.add(origin);
+            }
+        }
+
+        for (String origin : origins) {
+            if (!corsOriginRepo.existsByOrigin(origin)) {
+                CorsAllowedOrigin entry = new CorsAllowedOrigin();
+                entry.id = TsidGenerator.generate();
+                entry.origin = origin;
+                entry.description = "Auto-added for OAuth client: " + clientName;
+                corsOriginRepo.persist(entry);
+                LOG.infof("Auto-added CORS origin %s for OAuth client %s", origin, clientName);
+            }
+        }
     }
 
     private ClientDto toDto(OAuthClient client, Map<String, String> appIdToName) {

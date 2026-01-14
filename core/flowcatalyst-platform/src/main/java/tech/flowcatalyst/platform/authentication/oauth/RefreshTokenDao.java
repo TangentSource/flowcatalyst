@@ -2,7 +2,7 @@ package tech.flowcatalyst.platform.authentication.oauth;
 
 import org.jdbi.v3.sqlobject.config.RegisterRowMapper;
 import org.jdbi.v3.sqlobject.customizer.Bind;
-import org.jdbi.v3.sqlobject.customizer.BindBean;
+import org.jdbi.v3.sqlobject.customizer.BindFields;
 import org.jdbi.v3.sqlobject.statement.SqlQuery;
 import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 
@@ -30,7 +30,7 @@ public interface RefreshTokenDao {
         VALUES (:tokenHash, :principalId, :clientId, :contextClientId,
             :scope, :tokenFamily, :revoked, :revokedAt, :replacedBy, :expiresAt, :createdAt)
         """)
-    void insert(@BindBean RefreshToken token);
+    void insert(@BindFields RefreshToken token);
 
     @SqlUpdate("""
         UPDATE refresh_tokens SET principal_id = :principalId, client_id = :clientId,
@@ -38,7 +38,7 @@ public interface RefreshTokenDao {
             revoked = :revoked, revoked_at = :revokedAt, replaced_by = :replacedBy, expires_at = :expiresAt
         WHERE token_hash = :tokenHash
         """)
-    void update(@BindBean RefreshToken token);
+    void update(@BindFields RefreshToken token);
 
     @SqlUpdate("""
         UPDATE refresh_tokens SET revoked = true, revoked_at = :revokedAt, replaced_by = :replacedBy

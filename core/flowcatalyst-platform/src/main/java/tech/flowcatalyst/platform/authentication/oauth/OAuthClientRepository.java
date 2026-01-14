@@ -24,6 +24,18 @@ public interface OAuthClientRepository {
      */
     boolean isOriginAllowedByAnyClient(String origin);
 
+    /**
+     * Check if an origin is used by any OAuth client in redirect URIs or allowed origins.
+     * Used to prevent deletion of CORS origins that are in use.
+     */
+    boolean isOriginUsedByAnyClient(String origin);
+
+    /**
+     * Find OAuth client names that use a specific origin in redirect URIs or allowed origins.
+     * Used to provide helpful error messages when preventing CORS origin deletion.
+     */
+    List<String> findClientNamesUsingOrigin(String origin);
+
     // Write operations
     void persist(OAuthClient client);
     void update(OAuthClient client);

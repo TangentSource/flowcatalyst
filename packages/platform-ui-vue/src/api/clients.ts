@@ -1,4 +1,4 @@
-import { bffFetch } from './client';
+import { apiFetch } from './client';
 
 export interface Client {
   id: string;
@@ -49,7 +49,7 @@ export interface ClientSearchParams {
 export const clientsApi = {
   list(status?: string): Promise<ClientListResponse> {
     const params = status ? `?status=${status}` : '';
-    return bffFetch(`/admin/clients${params}`);
+    return apiFetch(`/admin/clients${params}`);
   },
 
   search(params: ClientSearchParams = {}): Promise<ClientListResponse> {
@@ -58,53 +58,53 @@ export const clientsApi = {
     if (params.status) searchParams.set('status', params.status);
     if (params.limit) searchParams.set('limit', String(params.limit));
     const queryString = searchParams.toString();
-    return bffFetch(`/admin/clients/search${queryString ? `?${queryString}` : ''}`);
+    return apiFetch(`/admin/clients/search${queryString ? `?${queryString}` : ''}`);
   },
 
   get(id: string): Promise<Client> {
-    return bffFetch(`/admin/clients/${id}`);
+    return apiFetch(`/admin/clients/${id}`);
   },
 
   getByIdentifier(identifier: string): Promise<Client> {
-    return bffFetch(`/admin/clients/by-identifier/${identifier}`);
+    return apiFetch(`/admin/clients/by-identifier/${identifier}`);
   },
 
   create(data: CreateClientRequest): Promise<Client> {
-    return bffFetch('/admin/clients', {
+    return apiFetch('/admin/clients', {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
   update(id: string, data: UpdateClientRequest): Promise<Client> {
-    return bffFetch(`/admin/clients/${id}`, {
+    return apiFetch(`/admin/clients/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
   },
 
   activate(id: string): Promise<{ message: string }> {
-    return bffFetch(`/admin/clients/${id}/activate`, {
+    return apiFetch(`/admin/clients/${id}/activate`, {
       method: 'POST',
     });
   },
 
   suspend(id: string, reason: string): Promise<{ message: string }> {
-    return bffFetch(`/admin/clients/${id}/suspend`, {
+    return apiFetch(`/admin/clients/${id}/suspend`, {
       method: 'POST',
       body: JSON.stringify({ reason }),
     });
   },
 
   deactivate(id: string, reason: string): Promise<{ message: string }> {
-    return bffFetch(`/admin/clients/${id}/deactivate`, {
+    return apiFetch(`/admin/clients/${id}/deactivate`, {
       method: 'POST',
       body: JSON.stringify({ reason }),
     });
   },
 
   addNote(id: string, category: string, text: string): Promise<{ message: string }> {
-    return bffFetch(`/admin/clients/${id}/notes`, {
+    return apiFetch(`/admin/clients/${id}/notes`, {
       method: 'POST',
       body: JSON.stringify({ category, text }),
     });
@@ -112,23 +112,23 @@ export const clientsApi = {
 
   // Application management
   getApplications(clientId: string): Promise<ClientApplicationsResponse> {
-    return bffFetch(`/admin/clients/${clientId}/applications`);
+    return apiFetch(`/admin/clients/${clientId}/applications`);
   },
 
   enableApplication(clientId: string, applicationId: string): Promise<{ message: string }> {
-    return bffFetch(`/admin/clients/${clientId}/applications/${applicationId}/enable`, {
+    return apiFetch(`/admin/clients/${clientId}/applications/${applicationId}/enable`, {
       method: 'POST',
     });
   },
 
   disableApplication(clientId: string, applicationId: string): Promise<{ message: string }> {
-    return bffFetch(`/admin/clients/${clientId}/applications/${applicationId}/disable`, {
+    return apiFetch(`/admin/clients/${clientId}/applications/${applicationId}/disable`, {
       method: 'POST',
     });
   },
 
   updateApplications(clientId: string, enabledApplicationIds: string[]): Promise<{ message: string }> {
-    return bffFetch(`/admin/clients/${clientId}/applications`, {
+    return apiFetch(`/admin/clients/${clientId}/applications`, {
       method: 'PUT',
       body: JSON.stringify({ enabledApplicationIds }),
     });

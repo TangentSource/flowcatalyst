@@ -28,18 +28,52 @@ val npmInstall by tasks.registering(Exec::class) {
     outputs.dir(uiDir.resolve("node_modules"))
 }
 
+// Build UI using existing generated SDK (no regeneration - avoids circular dependency)
 val buildUi by tasks.registering(Exec::class) {
-    description = "Build platform-ui-vue for production"
+    description = "Build platform-ui-vue for production (uses existing SDK)"
     group = "build"
     dependsOn(npmInstall)
     workingDir = uiDir
-    // Skip api:generate (requires running backend) and vue-tsc (fix TS errors separately)
+    // Use vite build directly - skip api:generate to avoid circular dependency
     commandLine("npx", "vite", "build")
-    inputs.dir(uiDir.resolve("src"))
-    inputs.file(uiDir.resolve("package.json"))
-    inputs.file(uiDir.resolve("vite.config.ts"))
-    inputs.file(uiDir.resolve("tsconfig.json"))
-    outputs.dir(uiDistDir)
+    // Note: Don't declare inputs/outputs - they conflict with same tasks in other modules
+}
+
+// ==========================================================================
+// OpenAPI SDK Generation (run separately, not part of normal build)
+// ==========================================================================
+// To update the SDK after API changes:
+//   ./gradlew :core:flowcatalyst-app:updateApiSdk
+// This builds the app, extracts OpenAPI spec, and regenerates the TypeScript SDK
+
+val copyOpenApiToFrontend by tasks.registering(Copy::class) {
+    description = "Copy generated OpenAPI spec to frontend"
+    group = "openapi"
+    dependsOn("quarkusBuild")
+    // OpenAPI is generated in project dir (not build dir) by quarkus.smallrye-openapi.store-schema-directory
+    from(layout.projectDirectory.dir("openapi"))
+    into(uiDir.resolve("openapi"))
+    doFirst {
+        println("Copying OpenAPI spec to frontend...")
+    }
+}
+
+val generateApiSdk by tasks.registering(Exec::class) {
+    description = "Generate TypeScript SDK from OpenAPI spec"
+    group = "openapi"
+    dependsOn(npmInstall, copyOpenApiToFrontend)
+    workingDir = uiDir
+    commandLine("npm", "run", "api:generate")
+    // Note: Don't declare outputs.dir() here - it conflicts with buildUi's inputs.dir() in other modules
+}
+
+val updateApiSdk by tasks.registering {
+    description = "Build app, extract OpenAPI, and regenerate TypeScript SDK"
+    group = "openapi"
+    dependsOn(generateApiSdk)
+    doLast {
+        println("API SDK updated! Now rebuild the UI or run a full build.")
+    }
 }
 
 val copyUiToResources by tasks.registering(Copy::class) {

@@ -2,7 +2,7 @@ package tech.flowcatalyst.event;
 
 import org.jdbi.v3.sqlobject.config.RegisterRowMapper;
 import org.jdbi.v3.sqlobject.customizer.Bind;
-import org.jdbi.v3.sqlobject.customizer.BindBean;
+import org.jdbi.v3.sqlobject.customizer.BindFields;
 import org.jdbi.v3.sqlobject.statement.SqlQuery;
 import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 
@@ -39,7 +39,7 @@ public interface EventDao {
         VALUES (:id, :type, :source, :subject, :time, :data::jsonb, :correlationId, :causationId,
                 :deduplicationId, :messageGroup, :clientId, :contextData::jsonb, NOW())
         """)
-    void insert(@BindBean Event event, @Bind("contextData") String contextDataJson);
+    void insert(@BindFields Event event, @Bind("contextData") String contextDataJson);
 
     @SqlUpdate("""
         UPDATE events SET type = :type, source = :source, subject = :subject, time = :time,
@@ -48,7 +48,7 @@ public interface EventDao {
                context_data = :contextData::jsonb
         WHERE id = :id
         """)
-    void update(@BindBean Event event, @Bind("contextData") String contextDataJson);
+    void update(@BindFields Event event, @Bind("contextData") String contextDataJson);
 
     @SqlUpdate("DELETE FROM events WHERE id = :id")
     int deleteById(@Bind("id") String id);

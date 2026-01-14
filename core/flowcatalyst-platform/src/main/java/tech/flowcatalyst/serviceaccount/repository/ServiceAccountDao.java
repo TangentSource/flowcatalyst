@@ -2,7 +2,7 @@ package tech.flowcatalyst.serviceaccount.repository;
 
 import org.jdbi.v3.sqlobject.config.RegisterRowMapper;
 import org.jdbi.v3.sqlobject.customizer.Bind;
-import org.jdbi.v3.sqlobject.customizer.BindBean;
+import org.jdbi.v3.sqlobject.customizer.BindFields;
 import org.jdbi.v3.sqlobject.statement.SqlQuery;
 import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 import tech.flowcatalyst.serviceaccount.entity.ServiceAccount;
@@ -43,7 +43,7 @@ public interface ServiceAccountDao {
         VALUES (:id, :code, :name, :description, :clientIds, :applicationId,
             :active, :webhookCredentials::jsonb, :roles::jsonb, :lastUsedAt, :createdAt, :updatedAt)
         """)
-    void insert(@BindBean ServiceAccount serviceAccount,
+    void insert(@BindFields ServiceAccount serviceAccount,
                 @Bind("clientIds") String[] clientIdsArray,
                 @Bind("webhookCredentials") String webhookCredentialsJson,
                 @Bind("roles") String rolesJson);
@@ -55,7 +55,7 @@ public interface ServiceAccountDao {
             last_used_at = :lastUsedAt, updated_at = :updatedAt
         WHERE id = :id
         """)
-    void update(@BindBean ServiceAccount serviceAccount,
+    void update(@BindFields ServiceAccount serviceAccount,
                 @Bind("clientIds") String[] clientIdsArray,
                 @Bind("webhookCredentials") String webhookCredentialsJson,
                 @Bind("roles") String rolesJson);

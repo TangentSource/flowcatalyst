@@ -18,7 +18,8 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - flowcatalyst-postgres-data:/var/lib/postgresql/data
+      # PostgreSQL 18+ uses /var/lib/postgresql (not /data) for pg_upgrade compatibility
+      - flowcatalyst-postgres-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U flowcatalyst -d flowcatalyst"]
       interval: 5s

@@ -2,7 +2,7 @@ package tech.flowcatalyst.dispatchjob.repository;
 
 import org.jdbi.v3.sqlobject.config.RegisterRowMapper;
 import org.jdbi.v3.sqlobject.customizer.Bind;
-import org.jdbi.v3.sqlobject.customizer.BindBean;
+import org.jdbi.v3.sqlobject.customizer.BindFields;
 import org.jdbi.v3.sqlobject.statement.SqlQuery;
 import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 import tech.flowcatalyst.dispatchjob.entity.DispatchJob;
@@ -72,7 +72,7 @@ public interface DispatchJobDao {
                 :attemptCount, :lastAttemptAt, :completedAt, :durationMillis, :lastError,
                 :idempotencyKey, :attempts::jsonb, :createdAt, :updatedAt)
         """)
-    void insert(@BindBean DispatchJob job,
+    void insert(@BindFields DispatchJob job,
                 @Bind("metadata") String metadataJson,
                 @Bind("headers") String headersJson,
                 @Bind("attempts") String attemptsJson);
@@ -92,7 +92,7 @@ public interface DispatchJobDao {
                attempts = :attempts::jsonb, updated_at = :updatedAt
         WHERE id = :id
         """)
-    void update(@BindBean DispatchJob job,
+    void update(@BindFields DispatchJob job,
                 @Bind("metadata") String metadataJson,
                 @Bind("headers") String headersJson,
                 @Bind("attempts") String attemptsJson);

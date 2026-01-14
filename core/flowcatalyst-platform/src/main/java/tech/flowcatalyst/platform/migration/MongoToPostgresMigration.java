@@ -213,8 +213,8 @@ public class MongoToPostgresMigration {
     }
 
     public void migrateAuthRoles() {
-        LOG.info("Migrating auth_roles...");
-        MongoCollection<Document> collection = getCollection("auth_roles");
+        LOG.info("Migrating auth_roles (from roles)...");
+        MongoCollection<Document> collection = getCollection("roles");
 
         collection.find().forEach(doc -> {
             try {
@@ -238,12 +238,12 @@ public class MongoToPostgresMigration {
                 LOG.warnf("Failed to migrate auth_role %s: %s", doc.getString("_id"), e.getMessage());
             }
         });
-        LOG.infof("Migrated %d auth_roles", collection.countDocuments());
+        LOG.infof("Migrated %d auth_roles (from roles collection)", collection.countDocuments());
     }
 
     public void migrateAuthPermissions() {
-        LOG.info("Migrating auth_permissions...");
-        MongoCollection<Document> collection = getCollection("auth_permissions");
+        LOG.info("Migrating auth_permissions (from permissions)...");
+        MongoCollection<Document> collection = getCollection("permissions");
 
         collection.find().forEach(doc -> {
             try {
@@ -265,7 +265,7 @@ public class MongoToPostgresMigration {
                 LOG.warnf("Failed to migrate auth_permission %s: %s", doc.getString("_id"), e.getMessage());
             }
         });
-        LOG.infof("Migrated %d auth_permissions", collection.countDocuments());
+        LOG.infof("Migrated %d auth_permissions (from permissions collection)", collection.countDocuments());
     }
 
     public void migrateAnchorDomains() {
@@ -291,8 +291,8 @@ public class MongoToPostgresMigration {
     }
 
     public void migrateClientAuthConfigs() {
-        LOG.info("Migrating client_auth_configs...");
-        MongoCollection<Document> collection = getCollection("client_auth_configs");
+        LOG.info("Migrating client_auth_configs (from auth_configs)...");
+        MongoCollection<Document> collection = getCollection("auth_configs");
 
         collection.find().forEach(doc -> {
             try {
@@ -320,7 +320,7 @@ public class MongoToPostgresMigration {
                 LOG.warnf("Failed to migrate client_auth_config %s: %s", doc.getString("_id"), e.getMessage());
             }
         });
-        LOG.infof("Migrated %d client_auth_configs", collection.countDocuments());
+        LOG.infof("Migrated %d client_auth_configs (from auth_configs collection)", collection.countDocuments());
     }
 
     public void migrateClientAccessGrants() {

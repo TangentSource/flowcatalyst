@@ -2,7 +2,7 @@ package tech.flowcatalyst.platform.authorization;
 
 import org.jdbi.v3.sqlobject.config.RegisterRowMapper;
 import org.jdbi.v3.sqlobject.customizer.Bind;
-import org.jdbi.v3.sqlobject.customizer.BindBean;
+import org.jdbi.v3.sqlobject.customizer.BindFields;
 import org.jdbi.v3.sqlobject.statement.SqlQuery;
 import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 
@@ -31,14 +31,14 @@ public interface AuthPermissionDao {
         INSERT INTO auth_permissions (id, application_id, name, display_name, description, source, created_at)
         VALUES (:id, :applicationId, :name, :displayName, :description, :source, :createdAt)
         """)
-    void insert(@BindBean AuthPermission permission, @Bind("source") String source);
+    void insert(@BindFields AuthPermission permission, @Bind("source") String source);
 
     @SqlUpdate("""
         UPDATE auth_permissions SET application_id = :applicationId, name = :name,
             display_name = :displayName, description = :description, source = :source
         WHERE id = :id
         """)
-    void update(@BindBean AuthPermission permission, @Bind("source") String source);
+    void update(@BindFields AuthPermission permission, @Bind("source") String source);
 
     @SqlUpdate("DELETE FROM auth_permissions WHERE id = :id")
     int deleteById(@Bind("id") String id);

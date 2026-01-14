@@ -2,7 +2,7 @@ package tech.flowcatalyst.subscription;
 
 import org.jdbi.v3.sqlobject.config.RegisterRowMapper;
 import org.jdbi.v3.sqlobject.customizer.Bind;
-import org.jdbi.v3.sqlobject.customizer.BindBean;
+import org.jdbi.v3.sqlobject.customizer.BindFields;
 import org.jdbi.v3.sqlobject.statement.SqlQuery;
 import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 
@@ -68,7 +68,7 @@ public interface SubscriptionDao {
                 :timeoutSeconds, :maxRetries, :serviceAccountId, :dataOnly,
                 :createdAt, :updatedAt)
         """)
-    void insert(@BindBean Subscription subscription,
+    void insert(@BindFields Subscription subscription,
                 @Bind("eventTypes") String eventTypesJson,
                 @Bind("customConfig") String customConfigJson);
 
@@ -82,7 +82,7 @@ public interface SubscriptionDao {
                service_account_id = :serviceAccountId, data_only = :dataOnly, updated_at = :updatedAt
         WHERE id = :id
         """)
-    void update(@BindBean Subscription subscription,
+    void update(@BindFields Subscription subscription,
                 @Bind("eventTypes") String eventTypesJson,
                 @Bind("customConfig") String customConfigJson);
 

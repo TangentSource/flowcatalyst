@@ -38,19 +38,23 @@ val npmInstall by tasks.registering(Exec::class) {
     outputs.dir(uiDir.resolve("node_modules"))
 }
 
+// Build UI using existing generated SDK (no regeneration - avoids circular dependency)
 val buildUi by tasks.registering(Exec::class) {
-    description = "Build platform-ui-vue for production"
+    description = "Build platform-ui-vue for production (uses existing SDK)"
     group = "build"
     dependsOn(npmInstall)
     workingDir = uiDir
-    // Skip api:generate (requires running backend) and vue-tsc (fix TS errors separately)
+    // Use vite build directly - skip api:generate to avoid circular dependency
     commandLine("npx", "vite", "build")
-    inputs.dir(uiDir.resolve("src"))
-    inputs.file(uiDir.resolve("package.json"))
-    inputs.file(uiDir.resolve("vite.config.ts"))
-    inputs.file(uiDir.resolve("tsconfig.json"))
-    outputs.dir(uiDistDir)
+    // Note: Don't declare inputs/outputs - they conflict with same tasks in other modules
 }
+
+// ==========================================================================
+// OpenAPI SDK Generation
+// ==========================================================================
+// To update the SDK after API changes, use the root or app module task:
+//   ./gradlew :updateApiSdk
+// The SDK is shared between app and dev-build modules.
 
 val copyUiToResources by tasks.registering(Copy::class) {
     description = "Copy built UI to META-INF/resources"

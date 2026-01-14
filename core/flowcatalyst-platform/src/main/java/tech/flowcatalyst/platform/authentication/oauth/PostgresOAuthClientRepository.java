@@ -60,6 +60,20 @@ class PostgresOAuthClientRepository implements OAuthClientRepository {
     }
 
     @Override
+    public boolean isOriginUsedByAnyClient(String origin) {
+        // Pattern to match redirect URIs starting with this origin
+        String originPattern = origin + "%";
+        return jdbi.withExtension(OAuthClientDao.class, dao -> dao.isOriginUsedByAnyClient(origin, originPattern));
+    }
+
+    @Override
+    public List<String> findClientNamesUsingOrigin(String origin) {
+        // Pattern to match redirect URIs starting with this origin
+        String originPattern = origin + "%";
+        return jdbi.withExtension(OAuthClientDao.class, dao -> dao.findClientNamesUsingOrigin(origin, originPattern));
+    }
+
+    @Override
     public void persist(OAuthClient client) {
         String clientType = client.clientType != null ? client.clientType.name() : "PUBLIC";
         jdbi.useExtension(OAuthClientDao.class, dao ->

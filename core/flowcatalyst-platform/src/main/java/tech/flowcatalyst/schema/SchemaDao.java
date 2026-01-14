@@ -2,7 +2,7 @@ package tech.flowcatalyst.schema;
 
 import org.jdbi.v3.sqlobject.config.RegisterRowMapper;
 import org.jdbi.v3.sqlobject.customizer.Bind;
-import org.jdbi.v3.sqlobject.customizer.BindBean;
+import org.jdbi.v3.sqlobject.customizer.BindFields;
 import org.jdbi.v3.sqlobject.statement.SqlQuery;
 import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 
@@ -50,7 +50,7 @@ public interface SchemaDao {
         VALUES (:id, :name, :description, :mimeType, :schemaType, :content,
                 :eventTypeId, :version, :createdAt, :updatedAt)
         """)
-    void insert(@BindBean Schema schema);
+    void insert(@BindFields Schema schema);
 
     @SqlUpdate("""
         UPDATE schemas SET name = :name, description = :description, mime_type = :mimeType,
@@ -58,7 +58,7 @@ public interface SchemaDao {
                version = :version, updated_at = :updatedAt
         WHERE id = :id
         """)
-    void update(@BindBean Schema schema);
+    void update(@BindFields Schema schema);
 
     @SqlUpdate("DELETE FROM schemas WHERE id = :id")
     int deleteById(@Bind("id") String id);

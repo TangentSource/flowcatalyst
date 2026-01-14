@@ -34,7 +34,8 @@ public class DynamicCorsFilter {
             String path = request.path();
 
             // Only apply CORS to API endpoints
-            if (!path.startsWith("/api/") && !path.startsWith("/bff/") && !path.startsWith("/oauth/")) {
+            // Note: /oauth/ and /auth/ paths are handled by OAuthCorsFilter
+            if (!path.startsWith("/api/") && !path.startsWith("/bff/")) {
                 rc.next();
                 return;
             }

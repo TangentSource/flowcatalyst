@@ -2,7 +2,7 @@ package tech.flowcatalyst.platform.application;
 
 import org.jdbi.v3.sqlobject.config.RegisterRowMapper;
 import org.jdbi.v3.sqlobject.customizer.Bind;
-import org.jdbi.v3.sqlobject.customizer.BindBean;
+import org.jdbi.v3.sqlobject.customizer.BindFields;
 import org.jdbi.v3.sqlobject.statement.SqlQuery;
 import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 
@@ -39,7 +39,7 @@ public interface ApplicationDao {
         VALUES (:id, :code, :name, :description, :type, :defaultBaseUrl,
             :serviceAccountId, :active, :createdAt, :updatedAt)
         """)
-    void insert(@BindBean Application application, @Bind("type") String type);
+    void insert(@BindFields Application application, @Bind("type") String type);
 
     @SqlUpdate("""
         UPDATE applications SET code = :code, name = :name, description = :description,
@@ -47,7 +47,7 @@ public interface ApplicationDao {
             active = :active, updated_at = :updatedAt
         WHERE id = :id
         """)
-    void update(@BindBean Application application, @Bind("type") String type);
+    void update(@BindFields Application application, @Bind("type") String type);
 
     @SqlUpdate("DELETE FROM applications WHERE id = :id")
     int deleteById(@Bind("id") String id);

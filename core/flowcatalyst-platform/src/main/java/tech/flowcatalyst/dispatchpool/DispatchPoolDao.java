@@ -2,7 +2,7 @@ package tech.flowcatalyst.dispatchpool;
 
 import org.jdbi.v3.sqlobject.config.RegisterRowMapper;
 import org.jdbi.v3.sqlobject.customizer.Bind;
-import org.jdbi.v3.sqlobject.customizer.BindBean;
+import org.jdbi.v3.sqlobject.customizer.BindFields;
 import org.jdbi.v3.sqlobject.statement.SqlQuery;
 import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 
@@ -59,7 +59,7 @@ public interface DispatchPoolDao {
         VALUES (:id, :code, :name, :description, :rateLimit, :concurrency, :clientId,
                 :clientIdentifier, :status, :createdAt, :updatedAt)
         """)
-    void insert(@BindBean DispatchPool pool);
+    void insert(@BindFields DispatchPool pool);
 
     @SqlUpdate("""
         UPDATE dispatch_pools SET code = :code, name = :name, description = :description,
@@ -67,7 +67,7 @@ public interface DispatchPoolDao {
                client_identifier = :clientIdentifier, status = :status, updated_at = :updatedAt
         WHERE id = :id
         """)
-    void update(@BindBean DispatchPool pool);
+    void update(@BindFields DispatchPool pool);
 
     @SqlUpdate("DELETE FROM dispatch_pools WHERE id = :id")
     int deleteById(@Bind("id") String id);

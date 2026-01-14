@@ -2,7 +2,7 @@ package tech.flowcatalyst.platform.client;
 
 import org.jdbi.v3.sqlobject.config.RegisterRowMapper;
 import org.jdbi.v3.sqlobject.customizer.Bind;
-import org.jdbi.v3.sqlobject.customizer.BindBean;
+import org.jdbi.v3.sqlobject.customizer.BindFields;
 import org.jdbi.v3.sqlobject.statement.SqlQuery;
 import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 
@@ -32,7 +32,7 @@ public interface ClientAccessGrantDao {
         INSERT INTO client_access_grants (id, principal_id, client_id, granted_at, expires_at)
         VALUES (:id, :principalId, :clientId, :grantedAt, :expiresAt)
         """)
-    void insert(@BindBean ClientAccessGrant grant);
+    void insert(@BindFields ClientAccessGrant grant);
 
     @SqlUpdate("DELETE FROM client_access_grants WHERE id = :id")
     int deleteById(@Bind("id") String id);

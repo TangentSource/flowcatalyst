@@ -2,7 +2,7 @@ package tech.flowcatalyst.platform.cors;
 
 import org.jdbi.v3.sqlobject.config.RegisterRowMapper;
 import org.jdbi.v3.sqlobject.customizer.Bind;
-import org.jdbi.v3.sqlobject.customizer.BindBean;
+import org.jdbi.v3.sqlobject.customizer.BindFields;
 import org.jdbi.v3.sqlobject.statement.SqlQuery;
 import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 
@@ -31,7 +31,7 @@ public interface CorsAllowedOriginDao {
         INSERT INTO cors_allowed_origins (id, origin, description, created_by, created_at)
         VALUES (:id, :origin, :description, :createdBy, :createdAt)
         """)
-    void insert(@BindBean CorsAllowedOrigin entry);
+    void insert(@BindFields CorsAllowedOrigin entry);
 
     @SqlUpdate("DELETE FROM cors_allowed_origins WHERE id = :id")
     int deleteById(@Bind("id") String id);

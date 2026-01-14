@@ -2,7 +2,7 @@ package tech.flowcatalyst.dispatchjob.read;
 
 import org.jdbi.v3.sqlobject.config.RegisterRowMapper;
 import org.jdbi.v3.sqlobject.customizer.Bind;
-import org.jdbi.v3.sqlobject.customizer.BindBean;
+import org.jdbi.v3.sqlobject.customizer.BindFields;
 import org.jdbi.v3.sqlobject.statement.SqlQuery;
 import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 
@@ -55,7 +55,7 @@ public interface DispatchJobReadDao {
                 :lastAttemptAt, :completedAt, :durationMillis, :lastError,
                 :createdAt, :updatedAt, :application, :subdomain, :aggregate)
         """)
-    void insert(@BindBean DispatchJobRead job);
+    void insert(@BindFields DispatchJobRead job);
 
     @SqlUpdate("""
         UPDATE dispatch_jobs_read SET external_id = :externalId, source = :source, kind = :kind, code = :code,
@@ -68,7 +68,7 @@ public interface DispatchJobReadDao {
                updated_at = :updatedAt, application = :application, subdomain = :subdomain, aggregate = :aggregate
         WHERE id = :id
         """)
-    void update(@BindBean DispatchJobRead job);
+    void update(@BindFields DispatchJobRead job);
 
     @SqlUpdate("DELETE FROM dispatch_jobs_read WHERE id = :id")
     int deleteById(@Bind("id") String id);

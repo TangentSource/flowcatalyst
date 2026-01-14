@@ -21,6 +21,7 @@
     "build": "npm run api:generate && vue-tsc -b && vite build",
     "preview": "vite preview",
     "api:generate": "openapi-ts",
+    "api:generate:live": "OPENAPI_LIVE=true openapi-ts",
     "api:watch": "vite-node scripts/watch-api.ts",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{ts,vue,css}\"",

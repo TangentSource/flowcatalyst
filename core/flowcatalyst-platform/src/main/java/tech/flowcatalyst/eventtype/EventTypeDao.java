@@ -2,7 +2,7 @@ package tech.flowcatalyst.eventtype;
 
 import org.jdbi.v3.sqlobject.config.RegisterRowMapper;
 import org.jdbi.v3.sqlobject.customizer.Bind;
-import org.jdbi.v3.sqlobject.customizer.BindBean;
+import org.jdbi.v3.sqlobject.customizer.BindFields;
 import org.jdbi.v3.sqlobject.statement.SqlQuery;
 import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 
@@ -73,14 +73,14 @@ public interface EventTypeDao {
         INSERT INTO event_types (id, code, name, description, spec_versions, status, created_at, updated_at)
         VALUES (:id, :code, :name, :description, :specVersions::jsonb, :status, :createdAt, :updatedAt)
         """)
-    void insert(@BindBean EventType eventType, @Bind("specVersions") String specVersionsJson);
+    void insert(@BindFields EventType eventType, @Bind("specVersions") String specVersionsJson);
 
     @SqlUpdate("""
         UPDATE event_types SET code = :code, name = :name, description = :description,
                spec_versions = :specVersions::jsonb, status = :status, updated_at = :updatedAt
         WHERE id = :id
         """)
-    void update(@BindBean EventType eventType, @Bind("specVersions") String specVersionsJson);
+    void update(@BindFields EventType eventType, @Bind("specVersions") String specVersionsJson);
 
     @SqlUpdate("DELETE FROM event_types WHERE id = :id")
     int deleteById(@Bind("id") String id);

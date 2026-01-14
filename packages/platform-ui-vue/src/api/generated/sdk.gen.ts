@@ -202,6 +202,9 @@ import type {
   GetApiBffEventsFilterOptionsData,
   GetApiBffEventsFilterOptionsResponse,
   GetApiBffEventsByIdData,
+  GetApiClientsData,
+  GetApiClientsResponse,
+  GetApiClientsByIdData,
   GetApiConfigPlatformData,
   GetApiConfigPlatformResponse,
   GetApiDispatchJobsData,
@@ -242,6 +245,7 @@ import type {
   GetApiEventsByIdData,
   GetApiHealthData,
   GetApiHealthResponse,
+  PostApiMigrationMongoToPostgresData,
   PostApiSampleWebhookData,
   PostApiSampleWebhookFailPermanentData,
   PostApiSampleWebhookFailTransientData,
@@ -2717,6 +2721,36 @@ export const getApiBffEventsById = <ThrowOnError extends boolean = false>(
 };
 
 /**
+ * Get accessible clients
+ * Returns the list of clients the authenticated user or service has access to, based on the token's clients claim.
+ */
+export const getApiClients = <ThrowOnError extends boolean = false>(
+  options?: Options<GetApiClientsData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).get<
+    GetApiClientsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/clients",
+    ...options,
+  });
+};
+
+/**
+ * Get client by ID
+ * Returns a specific client if the caller has access to it.
+ */
+export const getApiClientsById = <ThrowOnError extends boolean = false>(
+  options: Options<GetApiClientsByIdData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<unknown, unknown, ThrowOnError>({
+    url: "/api/clients/{id}",
+    ...options,
+  });
+};
+
+/**
  * Get platform configuration
  * Returns platform feature flags and settings for the UI
  */
@@ -3120,6 +3154,24 @@ export const getApiHealth = <ThrowOnError extends boolean = false>(
     ThrowOnError
   >({
     url: "/api/health",
+    ...options,
+  });
+};
+
+/**
+ * Migrate All
+ */
+export const postApiMigrationMongoToPostgres = <
+  ThrowOnError extends boolean = false,
+>(
+  options?: Options<PostApiMigrationMongoToPostgresData, ThrowOnError>,
+) => {
+  return (options?.client ?? _heyApiClient).post<
+    unknown,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/migration/mongo-to-postgres",
     ...options,
   });
 };

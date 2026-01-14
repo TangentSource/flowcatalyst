@@ -2,7 +2,7 @@ package tech.flowcatalyst.platform.authentication.oauth;
 
 import org.jdbi.v3.sqlobject.config.RegisterRowMapper;
 import org.jdbi.v3.sqlobject.customizer.Bind;
-import org.jdbi.v3.sqlobject.customizer.BindBean;
+import org.jdbi.v3.sqlobject.customizer.BindFields;
 import org.jdbi.v3.sqlobject.statement.SqlQuery;
 import org.jdbi.v3.sqlobject.statement.SqlUpdate;
 
@@ -39,6 +39,28 @@ public interface OAuthClientDao {
     @SqlQuery("SELECT COUNT(*) > 0 FROM oauth_clients WHERE :origin = ANY(allowed_origins) AND active = true")
     boolean isOriginAllowedByAnyClient(@Bind("origin") String origin);
 
+    /**
+     * Check if origin is used in redirect_uris or allowed_origins by any client.
+     * For redirect_uris, we check if any URI starts with the origin.
+     */
+    @SqlQuery("""
+        SELECT COUNT(*) > 0 FROM oauth_clients
+        WHERE :origin = ANY(allowed_origins)
+           OR EXISTS (SELECT 1 FROM unnest(redirect_uris) AS uri WHERE uri LIKE :originPattern)
+        """)
+    boolean isOriginUsedByAnyClient(@Bind("origin") String origin, @Bind("originPattern") String originPattern);
+
+    /**
+     * Find client names that use the origin in redirect_uris or allowed_origins.
+     */
+    @SqlQuery("""
+        SELECT client_name FROM oauth_clients
+        WHERE :origin = ANY(allowed_origins)
+           OR EXISTS (SELECT 1 FROM unnest(redirect_uris) AS uri WHERE uri LIKE :originPattern)
+        ORDER BY client_name
+        """)
+    List<String> findClientNamesUsingOrigin(@Bind("origin") String origin, @Bind("originPattern") String originPattern);
+
     @SqlUpdate("""
         INSERT INTO oauth_clients (id, client_id, client_name, client_type, client_secret_ref,
             redirect_uris, allowed_origins, grant_types, default_scopes, pkce_required,
@@ -47,7 +69,7 @@ public interface OAuthClientDao {
             :redirectUris, :allowedOrigins, :grantTypes, :defaultScopes, :pkceRequired,
             :applicationIds, :serviceAccountPrincipalId, :active, :createdAt, :updatedAt)
         """)
-    void insert(@BindBean OAuthClient client,
+    void insert(@BindFields OAuthClient client,
                 @Bind("clientType") String clientType,
                 @Bind("redirectUris") String[] redirectUris,
                 @Bind("allowedOrigins") String[] allowedOrigins,
@@ -63,7 +85,7 @@ public interface OAuthClientDao {
             active = :active, updated_at = :updatedAt
         WHERE id = :id
         """)
-    void update(@BindBean OAuthClient client,
+    void update(@BindFields OAuthClient client,
                 @Bind("clientType") String clientType,
                 @Bind("redirectUris") String[] redirectUris,
                 @Bind("allowedOrigins") String[] allowedOrigins,

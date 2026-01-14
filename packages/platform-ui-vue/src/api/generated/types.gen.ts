@@ -196,6 +196,17 @@ export type ClientListResponse1 = {
   total?: number;
 };
 
+export type ClientListResponse2 = {
+  items?: Array<ClientResponse>;
+};
+
+export type ClientResponse = {
+  id?: string;
+  name?: string;
+  identifier?: string;
+  status?: string;
+};
+
 export type ClientStatus = "ACTIVE" | "INACTIVE" | "SUSPENDED";
 
 export type ClientType = "PUBLIC" | "CONFIDENTIAL";
@@ -4774,6 +4785,61 @@ export type GetApiBffEventsByIdResponses = {
   200: unknown;
 };
 
+export type GetApiClientsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/api/clients";
+};
+
+export type GetApiClientsErrors = {
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+};
+
+export type GetApiClientsResponses = {
+  /**
+   * List of accessible clients
+   */
+  200: ClientListResponse2;
+};
+
+export type GetApiClientsResponse =
+  GetApiClientsResponses[keyof GetApiClientsResponses];
+
+export type GetApiClientsByIdData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/clients/{id}";
+};
+
+export type GetApiClientsByIdErrors = {
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Access denied
+   */
+  403: unknown;
+  /**
+   * Client not found
+   */
+  404: unknown;
+};
+
+export type GetApiClientsByIdResponses = {
+  /**
+   * Client found
+   */
+  200: unknown;
+};
+
 export type GetApiConfigPlatformData = {
   body?: never;
   path?: never;
@@ -5355,6 +5421,20 @@ export type GetApiHealthResponses = {
 
 export type GetApiHealthResponse =
   GetApiHealthResponses[keyof GetApiHealthResponses];
+
+export type PostApiMigrationMongoToPostgresData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/api/migration/mongo-to-postgres";
+};
+
+export type PostApiMigrationMongoToPostgresResponses = {
+  /**
+   * OK
+   */
+  200: unknown;
+};
 
 export type PostApiSampleWebhookData = {
   body: string;
@@ -6088,5 +6168,5 @@ export type PostOauthTokenResponses = {
 };
 
 export type ClientOptions = {
-  baseUrl: "http://localhost:8080" | (string & {});
+  baseUrl: "http://localhost:8080" | "http://0.0.0.0:8080" | (string & {});
 };
