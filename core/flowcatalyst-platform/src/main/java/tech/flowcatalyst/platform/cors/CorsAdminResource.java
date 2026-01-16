@@ -7,7 +7,6 @@ import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import tech.flowcatalyst.platform.audit.AuditContext;
-import tech.flowcatalyst.platform.authentication.JwtKeyService;
 import tech.flowcatalyst.platform.common.ExecutionContext;
 import tech.flowcatalyst.platform.common.Result;
 import tech.flowcatalyst.platform.common.errors.UseCaseError;
@@ -36,18 +35,12 @@ public class CorsAdminResource {
     CorsOperations corsOperations;
 
     @Inject
-    JwtKeyService jwtKeyService;
-
-    @Inject
     AuditContext auditContext;
 
     @GET
     @Operation(summary = "List all CORS origins")
-    public Response listOrigins(
-        @CookieParam("fc_session") String sessionToken,
-        @HeaderParam("Authorization") String authHeader
-    ) {
-        requireAuth(sessionToken, authHeader);
+    public Response listOrigins() {
+        auditContext.requirePrincipalId();
 
         List<CorsAllowedOrigin> origins = corsOperations.listAll();
         List<CorsOriginResponse> responses = origins.stream()
@@ -63,11 +56,8 @@ public class CorsAdminResource {
     @GET
     @Path("/allowed")
     @Operation(summary = "Get allowed origins (cached)")
-    public Response getAllowedOrigins(
-        @CookieParam("fc_session") String sessionToken,
-        @HeaderParam("Authorization") String authHeader
-    ) {
-        requireAuth(sessionToken, authHeader);
+    public Response getAllowedOrigins() {
+        auditContext.requirePrincipalId();
 
         Set<String> origins = corsOperations.getAllowedOrigins();
         return Response.ok(Map.of("origins", origins)).build();
@@ -76,12 +66,8 @@ public class CorsAdminResource {
     @GET
     @Path("/{id}")
     @Operation(summary = "Get a CORS origin by ID")
-    public Response getOrigin(
-        @PathParam("id") String id,
-        @CookieParam("fc_session") String sessionToken,
-        @HeaderParam("Authorization") String authHeader
-    ) {
-        requireAuth(sessionToken, authHeader);
+    public Response getOrigin(@PathParam("id") String id) {
+        auditContext.requirePrincipalId();
 
         return corsOperations.findById(id)
             .map(origin -> Response.ok(CorsOriginResponse.from(origin)).build())
@@ -92,12 +78,8 @@ public class CorsAdminResource {
 
     @POST
     @Operation(summary = "Add a new allowed origin")
-    public Response addOrigin(
-        CreateCorsOriginRequest request,
-        @CookieParam("fc_session") String sessionToken,
-        @HeaderParam("Authorization") String authHeader
-    ) {
-        String principalId = requireAuth(sessionToken, authHeader);
+    public Response addOrigin(CreateCorsOriginRequest request) {
+        String principalId = auditContext.requirePrincipalId();
         ExecutionContext ctx = ExecutionContext.create(principalId);
 
         var command = new AddCorsOriginCommand(request.origin(), request.description());
@@ -126,12 +108,8 @@ public class CorsAdminResource {
     @DELETE
     @Path("/{id}")
     @Operation(summary = "Delete a CORS origin")
-    public Response deleteOrigin(
-        @PathParam("id") String id,
-        @CookieParam("fc_session") String sessionToken,
-        @HeaderParam("Authorization") String authHeader
-    ) {
-        String principalId = requireAuth(sessionToken, authHeader);
+    public Response deleteOrigin(@PathParam("id") String id) {
+        String principalId = auditContext.requirePrincipalId();
         ExecutionContext ctx = ExecutionContext.create(principalId);
 
         var command = new DeleteCorsOriginCommand(id);
@@ -150,16 +128,6 @@ public class CorsAdminResource {
                     .build();
             }
         };
-    }
-
-    private String requireAuth(String sessionToken, String authHeader) {
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            throw new NotAuthorizedException("Not authenticated");
-        }
-        String principalId = principalIdOpt.get();
-        auditContext.setPrincipalId(principalId);
-        return principalId;
     }
 
     // DTOs

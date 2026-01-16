@@ -32,7 +32,6 @@ import tech.flowcatalyst.platform.application.operations.updateapplication.Updat
 import tech.flowcatalyst.platform.application.events.ApplicationCreated;
 import tech.flowcatalyst.platform.audit.AuditContext;
 import tech.flowcatalyst.platform.authentication.EmbeddedModeOnly;
-import tech.flowcatalyst.platform.authentication.JwtKeyService;
 import tech.flowcatalyst.platform.authorization.PermissionRegistry;
 import tech.flowcatalyst.platform.client.Client;
 import tech.flowcatalyst.platform.client.ClientRepository;
@@ -66,9 +65,6 @@ public class ApplicationAdminResource {
     ClientRepository clientRepo;
 
     @Inject
-    JwtKeyService jwtKeyService;
-
-    @Inject
     AuditContext auditContext;
 
     @Inject
@@ -97,15 +93,10 @@ public class ApplicationAdminResource {
     @Operation(summary = "List all applications")
     public Response listApplications(
             @QueryParam("activeOnly") @DefaultValue("false") boolean activeOnly,
-            @QueryParam("type") String type,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+            @QueryParam("type") String type) {
 
-        if (!isAuthenticated(sessionToken, authHeader)) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(Map.of("error", "Not authenticated"))
-                .build();
-        }
+        // Require authentication (throws 401 if not authenticated)
+        auditContext.requirePrincipalId();
 
         List<Application> apps;
         if (type != null && !type.isBlank()) {
@@ -178,6 +169,9 @@ public class ApplicationAdminResource {
             request.description,
             request.defaultBaseUrl,
             request.iconUrl,
+            request.website,
+            request.logo,
+            request.logoMimeType,
             appType,
             true  // provisionServiceAccount
         );
@@ -238,7 +232,10 @@ public class ApplicationAdminResource {
             request.name,
             request.description,
             request.defaultBaseUrl,
-            request.iconUrl
+            request.iconUrl,
+            request.website,
+            request.logo,
+            request.logoMimeType
         );
         Result<ApplicationUpdated> result = updateApplicationUseCase.execute(command, ctx);
 
@@ -415,6 +412,7 @@ public class ApplicationAdminResource {
                 applicationId,
                 clientId,
                 request.baseUrlOverride,
+                request.websiteOverride,
                 request.config
             );
             Result<ApplicationEnabledForClient> result = applicationService.enableForClient(ctx, command);
@@ -431,12 +429,17 @@ public class ApplicationAdminResource {
                     response.put("clientIdentifier", event.clientIdentifier());
                     response.put("enabled", true);
                     response.put("baseUrlOverride", request.baseUrlOverride);
-                    // Compute effective base URL
+                    response.put("websiteOverride", request.websiteOverride);
+                    // Compute effective URLs
                     Application app = applicationRepo.findByIdOptional(applicationId).orElse(null);
                     String effectiveBaseUrl = (request.baseUrlOverride != null && !request.baseUrlOverride.isBlank())
                         ? request.baseUrlOverride
                         : (app != null ? app.defaultBaseUrl : null);
                     response.put("effectiveBaseUrl", effectiveBaseUrl);
+                    String effectiveWebsite = (request.websiteOverride != null && !request.websiteOverride.isBlank())
+                        ? request.websiteOverride
+                        : (app != null ? app.website : null);
+                    response.put("effectiveWebsite", effectiveWebsite);
                     response.put("config", request.config);
                     yield Response.ok(response).build();
                 }
@@ -467,9 +470,11 @@ public class ApplicationAdminResource {
                     response.put("clientIdentifier", event.clientIdentifier());
                     response.put("enabled", false);
                     response.put("baseUrlOverride", null);
-                    // Compute effective base URL from app default
+                    response.put("websiteOverride", null);
+                    // Compute effective URLs from app defaults
                     Application app = applicationRepo.findByIdOptional(applicationId).orElse(null);
                     response.put("effectiveBaseUrl", app != null ? app.defaultBaseUrl : null);
+                    response.put("effectiveWebsite", app != null ? app.website : null);
                     response.put("config", null);
                     yield Response.ok(response).build();
                 }
@@ -576,6 +581,9 @@ public class ApplicationAdminResource {
         public String description;
         public String defaultBaseUrl;
         public String iconUrl;
+        public String website;
+        public String logo;
+        public String logoMimeType;
         public String type;  // "APPLICATION" or "INTEGRATION", defaults to APPLICATION
     }
 
@@ -584,11 +592,15 @@ public class ApplicationAdminResource {
         public String description;
         public String defaultBaseUrl;
         public String iconUrl;
+        public String website;
+        public String logo;
+        public String logoMimeType;
     }
 
     public static class ClientConfigRequest {
         public Boolean enabled;
         public String baseUrlOverride;
+        public String websiteOverride;
         public Map<String, Object> config;
     }
 
@@ -601,6 +613,8 @@ public class ApplicationAdminResource {
         result.put("description", app.description);
         result.put("defaultBaseUrl", app.defaultBaseUrl);
         result.put("iconUrl", app.iconUrl);
+        result.put("website", app.website);
+        result.put("logoMimeType", app.logoMimeType);
         result.put("serviceAccountId", app.serviceAccountId);
         result.put("serviceAccountPrincipalId", app.serviceAccountPrincipalId);
         result.put("active", app.active);
@@ -617,6 +631,9 @@ public class ApplicationAdminResource {
         result.put("name", app.name);
         result.put("description", app.description);
         result.put("iconUrl", app.iconUrl);
+        result.put("website", app.website);
+        result.put("logo", app.logo);
+        result.put("logoMimeType", app.logoMimeType);
         result.put("defaultBaseUrl", app.defaultBaseUrl);
         result.put("serviceAccountId", app.serviceAccountId);
         result.put("serviceAccountPrincipalId", app.serviceAccountPrincipalId);
@@ -644,25 +661,21 @@ public class ApplicationAdminResource {
 
         result.put("enabled", config.enabled);
         result.put("baseUrlOverride", config.baseUrlOverride);
+        result.put("websiteOverride", config.websiteOverride);
 
-        // Compute effective base URL
+        // Compute effective URLs
         Application app = applicationRepo.findByIdOptional(config.applicationId).orElse(null);
         String effectiveBaseUrl = (config.baseUrlOverride != null && !config.baseUrlOverride.isBlank())
             ? config.baseUrlOverride
             : (app != null ? app.defaultBaseUrl : null);
         result.put("effectiveBaseUrl", effectiveBaseUrl);
+
+        String effectiveWebsite = (config.websiteOverride != null && !config.websiteOverride.isBlank())
+            ? config.websiteOverride
+            : (app != null ? app.website : null);
+        result.put("effectiveWebsite", effectiveWebsite);
+
         result.put("config", config.configJson);
         return result;
-    }
-
-    private boolean isAuthenticated(String sessionToken, String authHeader) {
-        String token = sessionToken;
-        if (token == null && authHeader != null && authHeader.startsWith("Bearer ")) {
-            token = authHeader.substring("Bearer ".length());
-        }
-        if (token == null) {
-            return false;
-        }
-        return jwtKeyService.validateAndGetPrincipalId(token) != null;
     }
 }

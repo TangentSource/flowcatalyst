@@ -16,7 +16,6 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
 import tech.flowcatalyst.platform.audit.AuditContext;
 import tech.flowcatalyst.platform.authentication.EmbeddedModeOnly;
-import tech.flowcatalyst.platform.authentication.JwtKeyService;
 import tech.flowcatalyst.platform.common.ExecutionContext;
 import tech.flowcatalyst.platform.common.Result;
 import tech.flowcatalyst.platform.common.TracingContext;
@@ -59,9 +58,6 @@ public class ServiceAccountAdminResource {
     ServiceAccountOperations operations;
 
     @Inject
-    JwtKeyService jwtKeyService;
-
-    @Inject
     AuditContext auditContext;
 
     @Inject
@@ -79,16 +75,9 @@ public class ServiceAccountAdminResource {
     public Response list(
             @QueryParam("clientId") @Parameter(description = "Filter by client ID") String clientId,
             @QueryParam("applicationId") @Parameter(description = "Filter by application ID") String applicationId,
-            @QueryParam("active") @Parameter(description = "Filter by active status") Boolean active,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+            @QueryParam("active") @Parameter(description = "Filter by active status") Boolean active) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
+        auditContext.requirePrincipalId();
 
         ServiceAccountFilter filter = new ServiceAccountFilter(clientId, active, applicationId);
         List<ServiceAccount> accounts = operations.findWithFilter(filter);
@@ -108,17 +97,9 @@ public class ServiceAccountAdminResource {
             content = @Content(schema = @Schema(implementation = ServiceAccountDto.class))),
         @APIResponse(responseCode = "404", description = "Service account not found")
     })
-    public Response getById(
-            @PathParam("id") String id,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response getById(@PathParam("id") String id) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
+        auditContext.requirePrincipalId();
 
         return operations.findById(id)
             .map(sa -> Response.ok(toDto(sa)).build())
@@ -130,17 +111,9 @@ public class ServiceAccountAdminResource {
     @GET
     @Path("/code/{code}")
     @Operation(summary = "Get service account by code")
-    public Response getByCode(
-            @PathParam("code") String code,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response getByCode(@PathParam("code") String code) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
+        auditContext.requirePrincipalId();
 
         return operations.findByCode(code)
             .map(sa -> Response.ok(toDto(sa)).build())
@@ -159,19 +132,9 @@ public class ServiceAccountAdminResource {
     })
     public Response create(
             @Valid CreateServiceAccountRequest request,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader,
             @Context UriInfo uriInfo) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String adminPrincipalId = principalIdOpt.get();
-
-        auditContext.setPrincipalId(adminPrincipalId);
+        String adminPrincipalId = auditContext.requirePrincipalId();
         ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
 
         CreateServiceAccountCommand command = new CreateServiceAccountCommand(
@@ -208,19 +171,9 @@ public class ServiceAccountAdminResource {
     @Operation(summary = "Update service account metadata")
     public Response update(
             @PathParam("id") String id,
-            @Valid UpdateServiceAccountRequest request,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+            @Valid UpdateServiceAccountRequest request) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String adminPrincipalId = principalIdOpt.get();
-
-        auditContext.setPrincipalId(adminPrincipalId);
+        String adminPrincipalId = auditContext.requirePrincipalId();
         ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
 
         UpdateServiceAccountCommand command = new UpdateServiceAccountCommand(
@@ -244,20 +197,9 @@ public class ServiceAccountAdminResource {
     @DELETE
     @Path("/{id}")
     @Operation(summary = "Delete service account")
-    public Response delete(
-            @PathParam("id") String id,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response delete(@PathParam("id") String id) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String adminPrincipalId = principalIdOpt.get();
-
-        auditContext.setPrincipalId(adminPrincipalId);
+        String adminPrincipalId = auditContext.requirePrincipalId();
         ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
 
         Result<ServiceAccountDeleted> result = operations.delete(id, context);
@@ -275,19 +217,9 @@ public class ServiceAccountAdminResource {
     @Operation(summary = "Update auth token", description = "Replace the auth token with a custom value")
     public Response updateAuthToken(
             @PathParam("id") String id,
-            @Valid UpdateAuthTokenRequest request,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+            @Valid UpdateAuthTokenRequest request) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String adminPrincipalId = principalIdOpt.get();
-
-        auditContext.setPrincipalId(adminPrincipalId);
+        String adminPrincipalId = auditContext.requirePrincipalId();
         ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
 
         RegenerateAuthTokenResult result = operations.updateAuthToken(id, request.authToken(), context);
@@ -304,20 +236,9 @@ public class ServiceAccountAdminResource {
     @POST
     @Path("/{id}/regenerate-token")
     @Operation(summary = "Regenerate auth token", description = "Generate a new random auth token. Returns the new token (shown only once).")
-    public Response regenerateToken(
-            @PathParam("id") String id,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response regenerateToken(@PathParam("id") String id) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String adminPrincipalId = principalIdOpt.get();
-
-        auditContext.setPrincipalId(adminPrincipalId);
+        String adminPrincipalId = auditContext.requirePrincipalId();
         ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
 
         RegenerateAuthTokenResult result = operations.regenerateAuthToken(id, context);
@@ -331,20 +252,9 @@ public class ServiceAccountAdminResource {
     @POST
     @Path("/{id}/regenerate-secret")
     @Operation(summary = "Regenerate signing secret", description = "Generate a new signing secret. Returns the new secret (shown only once).")
-    public Response regenerateSecret(
-            @PathParam("id") String id,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response regenerateSecret(@PathParam("id") String id) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String adminPrincipalId = principalIdOpt.get();
-
-        auditContext.setPrincipalId(adminPrincipalId);
+        String adminPrincipalId = auditContext.requirePrincipalId();
         ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
 
         RegenerateSigningSecretResult result = operations.regenerateSigningSecret(id, context);
@@ -360,17 +270,9 @@ public class ServiceAccountAdminResource {
     @GET
     @Path("/{id}/roles")
     @Operation(summary = "Get assigned roles")
-    public Response getRoles(
-            @PathParam("id") String id,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response getRoles(@PathParam("id") String id) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
+        auditContext.requirePrincipalId();
 
         return operations.findById(id)
             .map(sa -> {
@@ -389,19 +291,9 @@ public class ServiceAccountAdminResource {
     @Operation(summary = "Assign roles", description = "Replace all roles with the provided list (declarative assignment)")
     public Response assignRoles(
             @PathParam("id") String id,
-            @Valid AssignRolesRequest request,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+            @Valid AssignRolesRequest request) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String adminPrincipalId = principalIdOpt.get();
-
-        auditContext.setPrincipalId(adminPrincipalId);
+        String adminPrincipalId = auditContext.requirePrincipalId();
         ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
 
         Result<RolesAssigned> result = operations.assignRoles(id, request.roles(), context);

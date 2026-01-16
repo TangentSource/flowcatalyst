@@ -7,10 +7,10 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLong;
 
 @ApplicationScoped
@@ -154,21 +154,20 @@ public class MicrometerQueueMetricsService implements QueueMetricsService {
         long failed30min = 0;
 
         // Clean up old outcomes and count recent ones
-        synchronized(metrics.recordedOutcomes) {
-            metrics.recordedOutcomes.removeIf(outcome -> outcome.timestamp < thirtyMinutesAgoMs);
+        // CopyOnWriteArrayList is thread-safe without synchronized (avoids virtual thread pinning)
+        metrics.recordedOutcomes.removeIf(outcome -> outcome.timestamp < thirtyMinutesAgoMs);
 
-            for (TimestampedQueueOutcome outcome : metrics.recordedOutcomes) {
-                if (outcome.success) {
-                    if (outcome.timestamp >= fiveMinutesAgoMs) {
-                        consumed5min++;
-                    }
-                    consumed30min++;
-                } else {
-                    if (outcome.timestamp >= fiveMinutesAgoMs) {
-                        failed5min++;
-                    }
-                    failed30min++;
+        for (TimestampedQueueOutcome outcome : metrics.recordedOutcomes) {
+            if (outcome.success) {
+                if (outcome.timestamp >= fiveMinutesAgoMs) {
+                    consumed5min++;
                 }
+                consumed30min++;
+            } else {
+                if (outcome.timestamp >= fiveMinutesAgoMs) {
+                    failed5min++;
+                }
+                failed30min++;
             }
         }
 
@@ -227,7 +226,7 @@ public class MicrometerQueueMetricsService implements QueueMetricsService {
             this.messagesNotVisible = notVisible;
             this.startTime = System.currentTimeMillis();
             this.lastProcessedTime = System.currentTimeMillis();
-            this.recordedOutcomes = new ArrayList<>();
+            this.recordedOutcomes = new CopyOnWriteArrayList<>();
         }
     }
 

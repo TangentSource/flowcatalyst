@@ -10,10 +10,10 @@ import org.jboss.logging.Logger;
 import tech.flowcatalyst.messagerouter.model.PoolStats;
 
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -88,9 +88,7 @@ public class MicrometerPoolMetricsService implements PoolMetricsService {
 
         // Track timestamped rate-limited event for 30-minute rolling window
         long now = System.currentTimeMillis();
-        synchronized(metrics.rateLimitedEvents) {
-            metrics.rateLimitedEvents.add(now);
-        }
+        metrics.rateLimitedEvents.add(now);
     }
 
     @Override
@@ -146,21 +144,20 @@ public class MicrometerPoolMetricsService implements PoolMetricsService {
         long failed30min = 0;
 
         // Clean up old outcomes and count recent ones
-        synchronized(metrics.recordedOutcomes) {
-            metrics.recordedOutcomes.removeIf(outcome -> outcome.timestamp < thirtyMinutesAgoMs);
+        // CopyOnWriteArrayList is thread-safe without synchronized (avoids virtual thread pinning)
+        metrics.recordedOutcomes.removeIf(outcome -> outcome.timestamp < thirtyMinutesAgoMs);
 
-            for (TimestampedOutcome outcome : metrics.recordedOutcomes) {
-                if (outcome.success) {
-                    if (outcome.timestamp >= fiveMinutesAgoMs) {
-                        succeeded5min++;
-                    }
-                    succeeded30min++;
-                } else {
-                    if (outcome.timestamp >= fiveMinutesAgoMs) {
-                        failed5min++;
-                    }
-                    failed30min++;
+        for (TimestampedOutcome outcome : metrics.recordedOutcomes) {
+            if (outcome.success) {
+                if (outcome.timestamp >= fiveMinutesAgoMs) {
+                    succeeded5min++;
                 }
+                succeeded30min++;
+            } else {
+                if (outcome.timestamp >= fiveMinutesAgoMs) {
+                    failed5min++;
+                }
+                failed30min++;
             }
         }
 
@@ -168,15 +165,14 @@ public class MicrometerPoolMetricsService implements PoolMetricsService {
         long rateLimited5min = 0;
         long rateLimited30min = 0;
 
-        synchronized(metrics.rateLimitedEvents) {
-            metrics.rateLimitedEvents.removeIf(timestamp -> timestamp < thirtyMinutesAgoMs);
+        // CopyOnWriteArrayList is thread-safe without synchronized (avoids virtual thread pinning)
+        metrics.rateLimitedEvents.removeIf(timestamp -> timestamp < thirtyMinutesAgoMs);
 
-            for (Long timestamp : metrics.rateLimitedEvents) {
-                if (timestamp >= fiveMinutesAgoMs) {
-                    rateLimited5min++;
-                }
-                rateLimited30min++;
+        for (Long timestamp : metrics.rateLimitedEvents) {
+            if (timestamp >= fiveMinutesAgoMs) {
+                rateLimited5min++;
             }
+            rateLimited30min++;
         }
 
         long totalProcessed5min = succeeded5min + failed5min;
@@ -339,8 +335,8 @@ public class MicrometerPoolMetricsService implements PoolMetricsService {
                 new AtomicInteger(0), // maxQueueCapacity - will be set on init
                 new AtomicLong(0),
                 new AtomicLong(0), // lastActivityTimestamp
-                new ArrayList<>(), // recordedOutcomes for 30-minute rolling window
-                new ArrayList<>()  // rateLimitedEvents for 30-minute rolling window
+                new CopyOnWriteArrayList<>(), // recordedOutcomes for 30-minute rolling window
+                new CopyOnWriteArrayList<>()  // rateLimitedEvents for 30-minute rolling window
             );
         });
     }

@@ -19,6 +19,7 @@ public class EventRowMapper implements RowMapper<Event> {
         Event event = new Event();
 
         event.id = rs.getString("id");
+        event.specVersion = rs.getString("spec_version");
         event.type = rs.getString("type");
         event.source = rs.getString("source");
         event.subject = rs.getString("subject");
@@ -40,9 +41,6 @@ public class EventRowMapper implements RowMapper<Event> {
         event.contextData = contextDataJson != null
             ? JsonHelper.fromJsonList(contextDataJson, ContextData.class)
             : new ArrayList<>();
-
-        // Note: specVersion is not in the database schema for events
-        // It should be set based on type lookup if needed
 
         return event;
     }

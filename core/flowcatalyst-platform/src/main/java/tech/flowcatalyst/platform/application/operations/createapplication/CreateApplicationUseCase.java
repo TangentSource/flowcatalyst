@@ -84,6 +84,9 @@ public class CreateApplicationUseCase {
         app.description = command.description();
         app.defaultBaseUrl = command.defaultBaseUrl();
         app.iconUrl = command.iconUrl();
+        app.website = command.website();
+        app.logo = command.logo();
+        app.logoMimeType = command.logoMimeType();
         app.active = true;
 
         // Create domain event
@@ -94,6 +97,8 @@ public class CreateApplicationUseCase {
             .description(app.description)
             .defaultBaseUrl(app.defaultBaseUrl)
             .iconUrl(app.iconUrl)
+            .website(app.website)
+            .logoMimeType(app.logoMimeType)
             .build();
 
         // Commit atomically

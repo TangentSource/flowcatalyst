@@ -33,7 +33,9 @@ public record ApplicationCreated(
     String name,
     String description,
     String defaultBaseUrl,
-    String iconUrl
+    String iconUrl,
+    String website,
+    String logoMimeType
 ) implements DomainEvent {
 
     private static final String EVENT_TYPE = "platform:control-plane:application:created";
@@ -79,7 +81,7 @@ public record ApplicationCreated(
     @JsonIgnore
     public String toDataJson() {
         try {
-            return MAPPER.writeValueAsString(new Data(applicationId, code, name, description, defaultBaseUrl, iconUrl));
+            return MAPPER.writeValueAsString(new Data(applicationId, code, name, description, defaultBaseUrl, iconUrl, website, logoMimeType));
         } catch (JsonProcessingException e) {
             throw new RuntimeException("Failed to serialize event data", e);
         }
@@ -94,7 +96,9 @@ public record ApplicationCreated(
         String name,
         String description,
         String defaultBaseUrl,
-        String iconUrl
+        String iconUrl,
+        String website,
+        String logoMimeType
     ) {}
 
     /**

@@ -10,18 +10,16 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
-import tech.flowcatalyst.platform.authentication.JwtKeyService;
+import tech.flowcatalyst.platform.audit.AuditContext;
 
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * Public API for clients.
  *
- * Returns clients based on the caller's token claims.
- * Service accounts and users can call this endpoint with their access token.
+ * Returns clients based on the caller's database-stored permissions.
+ * Authorization is determined by the principal's scope (ANCHOR, PARTNER, CLIENT).
  */
 @Path("/api/clients")
 @Produces(MediaType.APPLICATION_JSON)
@@ -33,12 +31,12 @@ public class ClientResource {
     ClientRepository clientRepository;
 
     @Inject
-    JwtKeyService jwtKeyService;
+    AuditContext auditContext;
 
     @GET
     @Operation(
         summary = "Get accessible clients",
-        description = "Returns the list of clients the authenticated user or service has access to, based on the token's clients claim."
+        description = "Returns the list of clients the authenticated principal has access to, based on their scope."
     )
     @APIResponses({
         @APIResponse(
@@ -49,34 +47,22 @@ public class ClientResource {
         ),
         @APIResponse(responseCode = "401", description = "Not authenticated")
     })
-    public Response getClients(
-        @CookieParam("fc_session") String sessionToken,
-        @HeaderParam("Authorization") String authHeader
-    ) {
-        // Validate token and get principal
-        var principalId = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalId.isEmpty()) {
-            return Response.status(401)
-                .entity(Map.of("error", "Not authenticated"))
-                .build();
-        }
-
-        // Extract clients claim from token
-        List<String> clientsClaim = jwtKeyService.extractClients(sessionToken, authHeader);
+    public Response getClients() {
+        // Require authentication (throws 401 if not authenticated)
+        auditContext.requirePrincipalId();
 
         List<Client> clients;
-        if (clientsClaim.contains("*")) {
-            // User has access to all clients
+        if (auditContext.hasAccessToAllClients()) {
+            // ANCHOR scope: access to all clients
             clients = clientRepository.findAllActive();
-        } else if (clientsClaim.isEmpty()) {
-            // No clients access
-            clients = List.of();
         } else {
-            // User has access to specific clients
-            Set<String> clientIds = new HashSet<>(clientsClaim);
-            clients = clientRepository.findByIds(clientIds).stream()
+            // CLIENT/PARTNER scope: access to home client only (for now)
+            // TODO: For PARTNER scope, also include clients from partner_client_access table
+            clients = auditContext.getHomeClientId()
+                .flatMap(clientRepository::findByIdOptional)
                 .filter(c -> c.status == ClientStatus.ACTIVE)
-                .toList();
+                .map(List::of)
+                .orElse(List.of());
         }
 
         List<ClientResponse> responses = clients.stream()
@@ -98,23 +84,12 @@ public class ClientResource {
         @APIResponse(responseCode = "403", description = "Access denied"),
         @APIResponse(responseCode = "404", description = "Client not found")
     })
-    public Response getClient(
-        @PathParam("id") String id,
-        @CookieParam("fc_session") String sessionToken,
-        @HeaderParam("Authorization") String authHeader
-    ) {
-        // Validate token
-        var principalId = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalId.isEmpty()) {
-            return Response.status(401)
-                .entity(Map.of("error", "Not authenticated"))
-                .build();
-        }
+    public Response getClient(@PathParam("id") String id) {
+        // Require authentication (throws 401 if not authenticated)
+        auditContext.requirePrincipalId();
 
-        // Check access
-        List<String> clientsClaim = jwtKeyService.extractClients(sessionToken, authHeader);
-        boolean hasAccess = clientsClaim.contains("*") || clientsClaim.contains(id);
-        if (!hasAccess) {
+        // Check access based on principal's scope
+        if (!auditContext.hasAccessToClient(id)) {
             return Response.status(403)
                 .entity(Map.of("error", "Access denied to this client"))
                 .build();

@@ -33,6 +33,13 @@ public class ApplicationClientConfig {
     public String baseUrlOverride;
 
     /**
+     * Client-specific website URL override.
+     * If set, this URL is used instead of the application's website.
+     * Example: "client1.yardmanagement.com" instead of "www.yardmanagement.com"
+     */
+    public String websiteOverride;
+
+    /**
      * Additional client-specific configuration as JSON.
      * Can include branding, feature flags, etc.
      */

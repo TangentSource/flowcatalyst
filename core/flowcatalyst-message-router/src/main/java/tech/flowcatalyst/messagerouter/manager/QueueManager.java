@@ -36,6 +36,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 
 @ApplicationScoped
 public class QueueManager implements MessageCallback {
@@ -107,6 +108,9 @@ public class QueueManager implements MessageCallback {
     private volatile boolean initialized = false;
     private volatile boolean shutdownInProgress = false;
 
+    // Use ReentrantLock instead of synchronized to avoid pinning virtual threads
+    private final ReentrantLock syncLock = new ReentrantLock();
+
     // Gauges for monitoring map sizes to detect memory leaks
     private AtomicInteger inPipelineMapSizeGauge;
     private AtomicInteger messageCallbacksMapSizeGauge;
@@ -152,7 +156,26 @@ public class QueueManager implements MessageCallback {
     }
 
     void onStartup(@Observes StartupEvent event) {
+        logVirtualThreadConfig();
         initializeMetrics();
+    }
+
+    /**
+     * Log virtual thread scheduler configuration at startup for diagnostics
+     */
+    private void logVirtualThreadConfig() {
+        String parallelism = System.getProperty("jdk.virtualThreadScheduler.parallelism", "not set");
+        String maxPoolSize = System.getProperty("jdk.virtualThreadScheduler.maxPoolSize", "not set");
+        int availableProcessors = Runtime.getRuntime().availableProcessors();
+
+        LOG.infof("Virtual Thread Config: parallelism=%s, maxPoolSize=%s, availableProcessors=%d",
+            parallelism, maxPoolSize, availableProcessors);
+
+        // Test that virtual threads are working by creating one
+        Thread.startVirtualThread(() -> {
+            LOG.infof("Virtual thread test: running on thread [%s], isVirtual=%s",
+                Thread.currentThread().getName(), Thread.currentThread().isVirtual());
+        });
     }
 
     /**
@@ -417,18 +440,25 @@ public class QueueManager implements MessageCallback {
             return;
         }
 
+        // Log every health check run to diagnose scheduling issues
+        LOG.infof("Health check running - checking %d consumers", queueConsumers.size());
+
         for (Map.Entry<String, QueueConsumer> entry : queueConsumers.entrySet()) {
             String queueIdentifier = entry.getKey();
             QueueConsumer consumer = entry.getValue();
 
             // Check if consumer is unhealthy (stalled/hung)
-            if (!consumer.isHealthy()) {
-                long lastPollTime = consumer.getLastPollTime();
-                long timeSinceLastPoll = lastPollTime > 0 ?
-                    (System.currentTimeMillis() - lastPollTime) / 1000 : -1;
+            int instanceId = System.identityHashCode(consumer);
+            long lastPollTime = consumer.getLastPollTime();
+            long timeSinceLastPoll = lastPollTime > 0 ?
+                (System.currentTimeMillis() - lastPollTime) / 1000 : -1;
 
-                LOG.warnf("Consumer for queue [%s] is unhealthy (last poll %ds ago) - initiating restart",
-                    queueIdentifier, timeSinceLastPoll);
+            LOG.debugf("Health check: queue [%s] instanceId=%d, lastPoll=%ds ago, healthy=%s",
+                queueIdentifier, instanceId, timeSinceLastPoll, consumer.isHealthy());
+
+            if (!consumer.isHealthy()) {
+                LOG.warnf("Consumer for queue [%s] is unhealthy (instanceId=%d, lastPollTime=%d, lastPoll %ds ago) - initiating restart",
+                    queueIdentifier, instanceId, lastPollTime, timeSinceLastPoll);
 
                 // Add warning for visibility
                 warningService.addWarning(
@@ -542,7 +572,17 @@ public class QueueManager implements MessageCallback {
         }
     }
 
-    private synchronized boolean syncConfiguration(boolean isInitialSync) {
+    private boolean syncConfiguration(boolean isInitialSync) {
+        // Use ReentrantLock instead of synchronized to avoid pinning virtual threads
+        syncLock.lock();
+        try {
+            return doSyncConfiguration(isInitialSync);
+        } finally {
+            syncLock.unlock();
+        }
+    }
+
+    private boolean doSyncConfiguration(boolean isInitialSync) {
         // Retry logic: 12 attempts with 5-second delays = 1 minute total
         // For initial sync failures, application will exit
         // For subsequent sync failures, application continues with existing config
@@ -604,12 +644,12 @@ public class QueueManager implements MessageCallback {
                         poolCode, existingPool.getQueueSize(), existingPool.getActiveWorkers());
                 } else {
                     // Pool exists in new config: update concurrency and/or rate limit in-place
-                    boolean concurrencyChanged = newPoolConfig.concurrency() != existingPool.getConcurrency();
+                    boolean concurrencyChanged = newPoolConfig.effectiveConcurrency() != existingPool.getConcurrency();
                     boolean rateLimitChanged = !java.util.Objects.equals(newPoolConfig.rateLimitPerMinute(), existingPool.getRateLimitPerMinute());
 
                     if (concurrencyChanged) {
                         int oldConcurrency = existingPool.getConcurrency();
-                        int newConcurrency = newPoolConfig.concurrency();
+                        int newConcurrency = newPoolConfig.effectiveConcurrency();
                         boolean updateSuccess = existingPool.updateConcurrency(newConcurrency, 60); // 60 second timeout
                         if (updateSuccess) {
                             LOG.infof("Pool [%s] concurrency updated: %d -> %d (in-place)",
@@ -666,11 +706,12 @@ public class QueueManager implements MessageCallback {
                         );
                     }
 
-                    // Calculate queue capacity: 10x concurrency with minimum of 500
-                    int queueCapacity = Math.max(poolConfig.concurrency() * QUEUE_CAPACITY_MULTIPLIER, MIN_QUEUE_CAPACITY);
+                    // Calculate queue capacity: 2x concurrency with minimum of 50
+                    int effectiveConcurrency = poolConfig.effectiveConcurrency();
+                    int queueCapacity = Math.max(effectiveConcurrency * QUEUE_CAPACITY_MULTIPLIER, MIN_QUEUE_CAPACITY);
 
                     LOG.infof("Creating new process pool [%s] with concurrency %d and queue capacity %d (pool %d/%d)",
-                        poolConfig.code(), poolConfig.concurrency(), queueCapacity, currentPoolCount + 1, maxPools);
+                        poolConfig.code(), effectiveConcurrency, queueCapacity, currentPoolCount + 1, maxPools);
 
                     // Determine mediator type based on pool code
                     tech.flowcatalyst.messagerouter.model.MediationType mediatorType = determineMediatorType(poolConfig.code());
@@ -678,7 +719,7 @@ public class QueueManager implements MessageCallback {
 
                     ProcessPool pool = new ProcessPoolImpl(
                         poolConfig.code(),
-                        poolConfig.concurrency(),
+                        effectiveConcurrency,
                         queueCapacity,
                         poolConfig.rateLimitPerMinute(),
                         mediator,
@@ -1265,13 +1306,16 @@ public class QueueManager implements MessageCallback {
             long lastPollTime = consumer.getLastPollTime();
             long timeSinceLastPoll = lastPollTime > 0 ?
                 System.currentTimeMillis() - lastPollTime : -1;
+            int instanceId = System.identityHashCode(consumer);
 
             healthStatus.put(queueId, new QueueConsumerHealth(
                 queueId,
                 isHealthy,
                 lastPollTime,
                 timeSinceLastPoll,
-                !consumer.isFullyStopped()
+                !consumer.isFullyStopped(),
+                instanceId,
+                consumer.getQueueIdentifier()  // The actual queue URL/identifier from the consumer
             ));
         }
 
@@ -1286,7 +1330,9 @@ public class QueueManager implements MessageCallback {
         boolean isHealthy,
         long lastPollTimeMs,
         long timeSinceLastPollMs,
-        boolean isRunning
+        boolean isRunning,
+        int instanceId,
+        String consumerQueueIdentifier  // The consumer's own queue identifier (may differ from map key)
     ) {}
 
     private tech.flowcatalyst.messagerouter.model.MediationType determineMediatorType(String poolCode) {

@@ -35,7 +35,8 @@ public record ApplicationEnabledForClient(
     String clientId,
     String clientIdentifier,
     String clientName,
-    String baseUrlOverride
+    String baseUrlOverride,
+    String websiteOverride
 ) implements DomainEvent {
 
     private static final String EVENT_TYPE = "platform:control-plane:application-client-config:enabled";
@@ -83,7 +84,7 @@ public record ApplicationEnabledForClient(
         try {
             return MAPPER.writeValueAsString(new Data(
                 configId, applicationId, applicationCode, applicationName,
-                clientId, clientIdentifier, clientName, baseUrlOverride
+                clientId, clientIdentifier, clientName, baseUrlOverride, websiteOverride
             ));
         } catch (JsonProcessingException e) {
             throw new RuntimeException("Failed to serialize event data", e);
@@ -98,7 +99,8 @@ public record ApplicationEnabledForClient(
         String clientId,
         String clientIdentifier,
         String clientName,
-        String baseUrlOverride
+        String baseUrlOverride,
+        String websiteOverride
     ) {}
 
     /**

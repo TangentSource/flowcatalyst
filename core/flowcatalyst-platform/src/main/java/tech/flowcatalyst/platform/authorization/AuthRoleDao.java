@@ -15,6 +15,9 @@ import java.util.Optional;
 @RegisterRowMapper(AuthRoleRowMapper.class)
 public interface AuthRoleDao {
 
+    @SqlQuery("SELECT * FROM auth_roles WHERE id = :id")
+    Optional<AuthRole> findById(@Bind("id") String id);
+
     @SqlQuery("SELECT * FROM auth_roles WHERE name = :name")
     Optional<AuthRole> findByName(@Bind("name") String name);
 

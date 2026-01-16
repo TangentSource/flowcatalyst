@@ -31,6 +31,9 @@ export interface ClientApplication {
   name: string;
   description?: string;
   iconUrl?: string;
+  website?: string;
+  effectiveWebsite?: string;
+  logoMimeType?: string;
   active: boolean;
   enabledForClient: boolean;
 }

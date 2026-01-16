@@ -7,6 +7,7 @@ import org.jboss.logging.Logger;
 import java.time.Instant;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 /**
@@ -26,6 +27,8 @@ public class CorsService {
 
     // Simple non-blocking cache using AtomicReference
     private final AtomicReference<CacheEntry> cache = new AtomicReference<>();
+    // Use ReentrantLock instead of synchronized to avoid pinning virtual threads
+    private final ReentrantLock refreshLock = new ReentrantLock();
 
     /**
      * Check if an origin is allowed.
@@ -63,20 +66,25 @@ public class CorsService {
         LOG.debug("CORS origins cache invalidated");
     }
 
-    private synchronized Set<String> refreshCache() {
-        // Double-check after acquiring lock
-        CacheEntry entry = cache.get();
-        if (entry != null && !entry.isExpired()) {
-            return entry.origins;
+    private Set<String> refreshCache() {
+        refreshLock.lock();
+        try {
+            // Double-check after acquiring lock
+            CacheEntry entry = cache.get();
+            if (entry != null && !entry.isExpired()) {
+                return entry.origins;
+            }
+
+            LOG.debug("Loading allowed origins from database");
+            Set<String> origins = repository.listAll().stream()
+                .map(o -> o.origin)
+                .collect(Collectors.toSet());
+
+            cache.set(new CacheEntry(origins));
+            return origins;
+        } finally {
+            refreshLock.unlock();
         }
-
-        LOG.debug("Loading allowed origins from database");
-        Set<String> origins = repository.listAll().stream()
-            .map(o -> o.origin)
-            .collect(Collectors.toSet());
-
-        cache.set(new CacheEntry(origins));
-        return origins;
     }
 
     private static class CacheEntry {

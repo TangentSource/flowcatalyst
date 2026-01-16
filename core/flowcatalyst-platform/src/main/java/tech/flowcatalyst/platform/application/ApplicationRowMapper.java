@@ -23,6 +23,10 @@ public class ApplicationRowMapper implements RowMapper<Application> {
         String typeStr = rs.getString("type");
         app.type = typeStr != null ? Application.ApplicationType.valueOf(typeStr) : Application.ApplicationType.APPLICATION;
 
+        app.iconUrl = rs.getString("icon_url");
+        app.website = rs.getString("website");
+        app.logo = rs.getString("logo");
+        app.logoMimeType = rs.getString("logo_mime_type");
         app.defaultBaseUrl = rs.getString("default_base_url");
         app.serviceAccountId = rs.getString("service_account_id");
         app.active = rs.getBoolean("active");

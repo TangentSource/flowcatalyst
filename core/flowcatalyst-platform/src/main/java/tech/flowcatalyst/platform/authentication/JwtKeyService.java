@@ -549,7 +549,6 @@ public class JwtKeyService {
      * Returns list of client IDs, or ["*"] for all clients access.
      * Returns empty list if token is invalid or has no clients claim.
      */
-    @SuppressWarnings("unchecked")
     public List<String> extractClients(String token) {
         if (token == null) {
             return List.of();
@@ -562,11 +561,11 @@ public class JwtKeyService {
             if (clientsClaim == null) {
                 return List.of();
             }
-            if (clientsClaim instanceof List) {
-                return (List<String>) clientsClaim;
-            }
-            if (clientsClaim instanceof java.util.Collection) {
-                return new java.util.ArrayList<>((java.util.Collection<String>) clientsClaim);
+            // Convert elements to actual Strings to handle JsonStringImpl from JWT parser
+            if (clientsClaim instanceof java.util.Collection<?> collection) {
+                return collection.stream()
+                    .map(Object::toString)
+                    .toList();
             }
             return List.of();
         } catch (Exception e) {

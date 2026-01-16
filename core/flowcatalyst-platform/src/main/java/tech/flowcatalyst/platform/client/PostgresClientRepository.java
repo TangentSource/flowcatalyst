@@ -43,13 +43,18 @@ class PostgresClientRepository implements ClientRepository {
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public List<Client> findByIds(Set<String> ids) {
         if (ids == null || ids.isEmpty()) {
             return new ArrayList<>();
         }
+        // Cast to raw Set to avoid ClassCastException when Set contains JsonStringImpl objects
+        String[] idsArray = ((Set<?>) ids).stream()
+            .map(Object::toString)
+            .toArray(String[]::new);
         return jdbi.withHandle(handle ->
             handle.createQuery("SELECT * FROM clients WHERE id = ANY(:ids)")
-                .bindArray("ids", String.class, ids.toArray(new String[0]))
+                .bindArray("ids", String.class, idsArray)
                 .registerRowMapper(new ClientRowMapper())
                 .mapTo(Client.class)
                 .list()

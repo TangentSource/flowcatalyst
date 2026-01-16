@@ -420,17 +420,32 @@ public class ClientAdminResource {
             .map(c -> c.applicationId)
             .collect(Collectors.toSet());
 
-        // Build response with enabled status
+        // Build response with enabled status and effective website
         List<ClientApplicationDto> appDtos = allApps.stream()
-            .map(app -> new ClientApplicationDto(
-                app.id,
-                app.code,
-                app.name,
-                app.description,
-                app.iconUrl,
-                app.active,
-                enabledAppIds.contains(app.id)
-            ))
+            .map(app -> {
+                // Find config for this app to get website override
+                ApplicationClientConfig config = configs.stream()
+                    .filter(c -> c.applicationId.equals(app.id))
+                    .findFirst()
+                    .orElse(null);
+
+                String effectiveWebsite = (config != null && config.websiteOverride != null && !config.websiteOverride.isBlank())
+                    ? config.websiteOverride
+                    : app.website;
+
+                return new ClientApplicationDto(
+                    app.id,
+                    app.code,
+                    app.name,
+                    app.description,
+                    app.iconUrl,
+                    app.website,
+                    effectiveWebsite,
+                    app.logoMimeType,
+                    app.active,
+                    enabledAppIds.contains(app.id)
+                );
+            })
             .toList();
 
         return Response.ok(new ClientApplicationsResponse(appDtos, appDtos.size())).build();
@@ -653,6 +668,9 @@ public class ClientAdminResource {
         String name,
         String description,
         String iconUrl,
+        String website,
+        String effectiveWebsite,
+        String logoMimeType,
         boolean active,
         boolean enabledForClient
     ) {}

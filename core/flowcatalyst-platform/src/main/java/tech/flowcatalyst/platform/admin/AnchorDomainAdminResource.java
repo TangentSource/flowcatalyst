@@ -13,8 +13,8 @@ import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
+import tech.flowcatalyst.platform.audit.AuditContext;
 import tech.flowcatalyst.platform.authentication.EmbeddedModeOnly;
-import tech.flowcatalyst.platform.authentication.JwtKeyService;
 import tech.flowcatalyst.platform.principal.AnchorDomain;
 import tech.flowcatalyst.platform.principal.AnchorDomainRepository;
 import tech.flowcatalyst.platform.principal.Principal;
@@ -51,7 +51,7 @@ public class AnchorDomainAdminResource {
     PrincipalRepository principalRepo;
 
     @Inject
-    JwtKeyService jwtKeyService;
+    AuditContext auditContext;
 
     // ==================== List & Get Operations ====================
 
@@ -67,16 +67,9 @@ public class AnchorDomainAdminResource {
         @APIResponse(responseCode = "401", description = "Not authenticated"),
         @APIResponse(responseCode = "403", description = "Insufficient permissions")
     })
-    public Response listAnchorDomains(
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response listAnchorDomains() {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
+        auditContext.requirePrincipalId();
 
         List<AnchorDomain> domains = anchorDomainRepo.listAll();
 
@@ -99,17 +92,9 @@ public class AnchorDomainAdminResource {
         @APIResponse(responseCode = "404", description = "Anchor domain not found"),
         @APIResponse(responseCode = "401", description = "Not authenticated")
     })
-    public Response getAnchorDomain(
-            @PathParam("id") String id,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response getAnchorDomain(@PathParam("id") String id) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
+        auditContext.requirePrincipalId();
 
         return anchorDomainRepo.findByIdOptional(id)
             .map(domain -> Response.ok(toDto(domain)).build())
@@ -129,17 +114,9 @@ public class AnchorDomainAdminResource {
             content = @Content(schema = @Schema(implementation = DomainCheckResponse.class))),
         @APIResponse(responseCode = "401", description = "Not authenticated")
     })
-    public Response checkDomain(
-            @PathParam("domain") String domain,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response checkDomain(@PathParam("domain") String domain) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
+        auditContext.requirePrincipalId();
 
         String normalizedDomain = domain.toLowerCase().trim();
         boolean isAnchor = anchorDomainRepo.existsByDomain(normalizedDomain);
@@ -166,17 +143,9 @@ public class AnchorDomainAdminResource {
     })
     public Response createAnchorDomain(
             @Valid CreateAnchorDomainRequest request,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader,
             @Context UriInfo uriInfo) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String principalId = principalIdOpt.get();
+        String principalId = auditContext.requirePrincipalId();
 
         String normalizedDomain = request.domain().toLowerCase().trim();
 
@@ -225,18 +194,9 @@ public class AnchorDomainAdminResource {
         @APIResponse(responseCode = "404", description = "Anchor domain not found"),
         @APIResponse(responseCode = "401", description = "Not authenticated")
     })
-    public Response deleteAnchorDomain(
-            @PathParam("id") String id,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response deleteAnchorDomain(@PathParam("id") String id) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String principalId = principalIdOpt.get();
+        String principalId = auditContext.requirePrincipalId();
 
         AnchorDomain domain = anchorDomainRepo.findByIdOptional(id).orElse(null);
         if (domain == null) {

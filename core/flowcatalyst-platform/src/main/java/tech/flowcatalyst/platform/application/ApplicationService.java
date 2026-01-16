@@ -79,6 +79,9 @@ public class ApplicationService {
         if (cmd.baseUrlOverride() != null) {
             config.baseUrlOverride = cmd.baseUrlOverride();
         }
+        if (cmd.websiteOverride() != null) {
+            config.websiteOverride = cmd.websiteOverride();
+        }
         if (cmd.configJson() != null) {
             config.configJson = cmd.configJson();
         }
@@ -92,6 +95,7 @@ public class ApplicationService {
             .clientIdentifier(client.identifier)
             .clientName(client.name)
             .baseUrlOverride(config.baseUrlOverride)
+            .websiteOverride(config.websiteOverride)
             .build();
 
         return unitOfWork.commit(config, event, cmd);
@@ -170,6 +174,25 @@ public class ApplicationService {
         }
 
         return app.defaultBaseUrl;
+    }
+
+    /**
+     * Get the effective website URL for an application and client.
+     *
+     * @param applicationId Application ID
+     * @param clientId Client ID
+     * @return The effective website URL (client override or default)
+     */
+    public String getEffectiveWebsite(String applicationId, String clientId) {
+        Application app = applicationRepo.findByIdOptional(applicationId)
+            .orElseThrow(() -> new NotFoundException("Application not found"));
+
+        Optional<ApplicationClientConfig> config = configRepo.findByApplicationAndClient(applicationId, clientId);
+        if (config.isPresent() && config.get().websiteOverride != null && !config.get().websiteOverride.isBlank()) {
+            return config.get().websiteOverride;
+        }
+
+        return app.website;
     }
 
     // ========================================================================

@@ -105,7 +105,7 @@ public class DispatchJobResource {
             content = @Content(mediaType = MediaType.APPLICATION_JSON, schema = @Schema(implementation = ErrorResponse.class))
         )
     })
-    public Response createDispatchJobBatch(@Valid List<CreateDispatchJobRequest> requests) {
+    public Response createDispatchJobBatch(List<@Valid CreateDispatchJobRequest> requests) {
         // Authorization - require DISPATCH_JOB_CREATE permission
         String principalId = auditContext.requirePrincipalId();
         authorizationService.requirePermission(principalId, PlatformMessagingPermissions.DISPATCH_JOB_CREATE);

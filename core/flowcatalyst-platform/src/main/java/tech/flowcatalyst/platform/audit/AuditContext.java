@@ -4,15 +4,19 @@ import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.NotAuthorizedException;
 import jakarta.ws.rs.core.Response;
+import tech.flowcatalyst.platform.cache.PrincipalCacheService;
 import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.PrincipalRepository;
 import tech.flowcatalyst.platform.principal.PrincipalType;
+import tech.flowcatalyst.platform.principal.UserScope;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
 
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
- * Request-scoped context holding the current principal ID for audit logging.
+ * Request-scoped context holding the current principal for audit logging and authorization.
  *
  * Can be populated:
  * - Automatically via AuditContextFilter (for HTTP requests)
@@ -21,6 +25,10 @@ import java.util.Optional;
  *
  * The SYSTEM principal is a special service account used for automated operations
  * that occur outside of a user request context.
+ *
+ * <p>Authorization data (roles, client access) is loaded from the database (with caching),
+ * not from token claims. This ensures the platform has real-time control over access
+ * and prevents stale token claims.
  */
 @RequestScoped
 public class AuditContext {
@@ -31,8 +39,12 @@ public class AuditContext {
     @Inject
     PrincipalRepository principalRepo;
 
+    @Inject
+    PrincipalCacheService principalCache;
+
     private String principalId;
     private String principalType; // "USER", "SERVICE", or "SYSTEM"
+    private Principal cachedPrincipal; // Lazily loaded from cache/database
 
     /**
      * Set principal ID manually (for tests, background jobs, CLI tools).
@@ -95,6 +107,115 @@ public class AuditContext {
      */
     public boolean isSystemPrincipal() {
         return "SYSTEM".equals(principalType);
+    }
+
+    // ========================================================================
+    // Authorization Methods (loaded from database, cached)
+    // ========================================================================
+
+    /**
+     * Get the current principal entity, loaded from database with caching.
+     *
+     * @return The principal, or empty if not found or not authenticated
+     */
+    public Optional<Principal> getPrincipal() {
+        if (principalId == null) {
+            return Optional.empty();
+        }
+        if (cachedPrincipal == null) {
+            cachedPrincipal = principalCache.getById(principalId).orElse(null);
+        }
+        return Optional.ofNullable(cachedPrincipal);
+    }
+
+    /**
+     * Get the current principal, throwing if not authenticated.
+     *
+     * @return The principal
+     * @throws NotAuthorizedException if not authenticated
+     */
+    public Principal requirePrincipal() {
+        return getPrincipal().orElseThrow(() -> new NotAuthorizedException(
+            Response.status(Response.Status.UNAUTHORIZED)
+                .entity("{\"error\":\"Authentication required\"}")
+                .type("application/json")
+                .build()
+        ));
+    }
+
+    /**
+     * Check if the current principal has access to all clients (ANCHOR scope).
+     *
+     * @return true if the principal can access all clients
+     */
+    public boolean hasAccessToAllClients() {
+        return getPrincipal()
+            .map(p -> p.scope == UserScope.ANCHOR)
+            .orElse(false);
+    }
+
+    /**
+     * Check if the current principal has access to a specific client.
+     *
+     * @param clientId The client ID to check
+     * @return true if access is allowed
+     */
+    public boolean hasAccessToClient(String clientId) {
+        Optional<Principal> principal = getPrincipal();
+        if (principal.isEmpty()) {
+            return false;
+        }
+
+        Principal p = principal.get();
+
+        // ANCHOR scope has access to all clients
+        if (p.scope == UserScope.ANCHOR) {
+            return true;
+        }
+
+        // CLIENT scope only has access to their home client
+        if (p.scope == UserScope.CLIENT) {
+            return clientId != null && clientId.equals(p.clientId);
+        }
+
+        // PARTNER scope - would need to check partner_client_access table
+        // For now, allow access to home client
+        if (p.scope == UserScope.PARTNER) {
+            return clientId != null && clientId.equals(p.clientId);
+            // TODO: Check partner_client_access table for additional clients
+        }
+
+        return false;
+    }
+
+    /**
+     * Get the roles assigned to the current principal.
+     *
+     * @return Set of role names, or empty set if not authenticated
+     */
+    public Set<String> getRoles() {
+        return getPrincipal()
+            .map(Principal::getRoleNames)
+            .orElse(Set.of());
+    }
+
+    /**
+     * Check if the current principal has a specific role.
+     *
+     * @param roleName The role name to check
+     * @return true if the principal has the role
+     */
+    public boolean hasRole(String roleName) {
+        return getRoles().contains(roleName);
+    }
+
+    /**
+     * Get the home client ID for the current principal.
+     *
+     * @return The client ID, or empty if no home client
+     */
+    public Optional<String> getHomeClientId() {
+        return getPrincipal().map(p -> p.clientId);
     }
 
     /**

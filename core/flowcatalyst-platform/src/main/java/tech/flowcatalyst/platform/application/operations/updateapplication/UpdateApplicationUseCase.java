@@ -78,6 +78,21 @@ public class UpdateApplicationUseCase {
             app.iconUrl = command.iconUrl();
         }
 
+        if (command.website() != null) {
+            app.website = command.website().isBlank() ? null : command.website();
+        }
+
+        if (command.logo() != null) {
+            app.logo = command.logo().isBlank() ? null : command.logo();
+        }
+
+        if (command.logoMimeType() != null) {
+            app.logoMimeType = command.logoMimeType().isBlank() ? null : command.logoMimeType();
+        }
+
+        // Update timestamp
+        app.updatedAt = java.time.Instant.now();
+
         // Create domain event
         ApplicationUpdated event = ApplicationUpdated.fromContext(context)
             .applicationId(app.id)
@@ -86,6 +101,8 @@ public class UpdateApplicationUseCase {
             .description(app.description)
             .defaultBaseUrl(app.defaultBaseUrl)
             .iconUrl(app.iconUrl)
+            .website(app.website)
+            .logoMimeType(app.logoMimeType)
             .build();
 
         // Commit atomically

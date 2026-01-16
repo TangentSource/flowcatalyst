@@ -400,6 +400,44 @@ public class MonitoringResource {
     }
 
     @GET
+    @Path("/consumer-health")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Operation(summary = "Get consumer health status", description = "Returns detailed health status for all queue consumers")
+    public Response getConsumerHealth() {
+        Map<String, tech.flowcatalyst.messagerouter.manager.QueueManager.QueueConsumerHealth> consumerHealth =
+            queueManager.getConsumerHealthStatus();
+
+        // Add current timestamp for comparison
+        long now = System.currentTimeMillis();
+
+        var result = new java.util.LinkedHashMap<String, Object>();
+        result.put("currentTimeMs", now);
+        result.put("currentTime", java.time.Instant.ofEpochMilli(now).toString());
+
+        var consumers = new java.util.LinkedHashMap<String, Object>();
+        for (var entry : consumerHealth.entrySet()) {
+            var health = entry.getValue();
+            var details = new java.util.LinkedHashMap<String, Object>();
+            details.put("mapKey", entry.getKey());
+            details.put("queueIdentifier", health.queueIdentifier());
+            details.put("consumerQueueIdentifier", health.consumerQueueIdentifier());
+            details.put("instanceId", health.instanceId());
+            details.put("isHealthy", health.isHealthy());
+            details.put("lastPollTimeMs", health.lastPollTimeMs());
+            details.put("lastPollTime", health.lastPollTimeMs() > 0 ?
+                java.time.Instant.ofEpochMilli(health.lastPollTimeMs()).toString() : "never");
+            details.put("timeSinceLastPollMs", health.timeSinceLastPollMs());
+            details.put("timeSinceLastPollSeconds", health.timeSinceLastPollMs() > 0 ?
+                health.timeSinceLastPollMs() / 1000 : -1);
+            details.put("isRunning", health.isRunning());
+            consumers.put(entry.getKey(), details);
+        }
+        result.put("consumers", consumers);
+
+        return Response.ok(result).build();
+    }
+
+    @GET
     @Path("/dashboard")
     @Produces(MediaType.TEXT_HTML)
     @Operation(summary = "Dashboard UI", description = "Returns the monitoring dashboard HTML page")

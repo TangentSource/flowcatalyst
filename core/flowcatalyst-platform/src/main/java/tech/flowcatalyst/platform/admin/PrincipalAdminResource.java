@@ -19,7 +19,6 @@ import org.jboss.logging.Logger;
 import tech.flowcatalyst.platform.audit.AuditContext;
 import tech.flowcatalyst.platform.authentication.EmbeddedModeOnly;
 import tech.flowcatalyst.platform.authentication.IdpType;
-import tech.flowcatalyst.platform.authentication.JwtKeyService;
 import tech.flowcatalyst.platform.authorization.PrincipalRole;
 import tech.flowcatalyst.platform.authorization.RoleService;
 import tech.flowcatalyst.platform.authentication.AuthProvider;
@@ -86,9 +85,6 @@ public class PrincipalAdminResource {
     ClientAccessGrantRepository grantRepo;
 
     @Inject
-    JwtKeyService jwtKeyService;
-
-    @Inject
     ClientAccessService clientAccessService;
 
     @Inject
@@ -118,16 +114,9 @@ public class PrincipalAdminResource {
     public Response listPrincipals(
             @QueryParam("clientId") @Parameter(description = "Filter by client ID") String clientId,
             @QueryParam("type") @Parameter(description = "Filter by type (USER/SERVICE)") PrincipalType type,
-            @QueryParam("active") @Parameter(description = "Filter by active status") Boolean active,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+            @QueryParam("active") @Parameter(description = "Filter by active status") Boolean active) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
+        auditContext.requirePrincipalId();
 
         List<Principal> principals;
 
@@ -166,17 +155,9 @@ public class PrincipalAdminResource {
             content = @Content(schema = @Schema(implementation = PrincipalDetailDto.class))),
         @APIResponse(responseCode = "404", description = "Principal not found")
     })
-    public Response getPrincipal(
-            @PathParam("id") String id,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response getPrincipal(@PathParam("id") String id) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
+        auditContext.requirePrincipalId();
 
         return principalRepo.findByIdOptional(id)
             .map(principal -> {
@@ -207,19 +188,9 @@ public class PrincipalAdminResource {
     })
     public Response createUser(
             @Valid CreateUserRequest request,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader,
             @Context UriInfo uriInfo) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String adminPrincipalId = principalIdOpt.get();
-
-        auditContext.setPrincipalId(adminPrincipalId);
+        String adminPrincipalId = auditContext.requirePrincipalId();
         ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
 
         CreateUserCommand command = new CreateUserCommand(
@@ -259,19 +230,9 @@ public class PrincipalAdminResource {
     })
     public Response updatePrincipal(
             @PathParam("id") String id,
-            @Valid UpdatePrincipalRequest request,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+            @Valid UpdatePrincipalRequest request) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String adminPrincipalId = principalIdOpt.get();
-
-        auditContext.setPrincipalId(adminPrincipalId);
+        String adminPrincipalId = auditContext.requirePrincipalId();
         ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
 
         UpdateUserCommand command = new UpdateUserCommand(id, request.name(), null);
@@ -299,20 +260,9 @@ public class PrincipalAdminResource {
         @APIResponse(responseCode = "200", description = "Principal activated"),
         @APIResponse(responseCode = "404", description = "Principal not found")
     })
-    public Response activatePrincipal(
-            @PathParam("id") String id,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response activatePrincipal(@PathParam("id") String id) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String adminPrincipalId = principalIdOpt.get();
-
-        auditContext.setPrincipalId(adminPrincipalId);
+        String adminPrincipalId = auditContext.requirePrincipalId();
         ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
 
         ActivateUserCommand command = new ActivateUserCommand(id);
@@ -337,20 +287,9 @@ public class PrincipalAdminResource {
         @APIResponse(responseCode = "200", description = "Principal deactivated"),
         @APIResponse(responseCode = "404", description = "Principal not found")
     })
-    public Response deactivatePrincipal(
-            @PathParam("id") String id,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response deactivatePrincipal(@PathParam("id") String id) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String adminPrincipalId = principalIdOpt.get();
-
-        auditContext.setPrincipalId(adminPrincipalId);
+        String adminPrincipalId = auditContext.requirePrincipalId();
         ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
 
         DeactivateUserCommand command = new DeactivateUserCommand(id, null);
@@ -380,17 +319,9 @@ public class PrincipalAdminResource {
     })
     public Response resetPassword(
             @PathParam("id") String id,
-            @Valid ResetPasswordRequest request,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+            @Valid ResetPasswordRequest request) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String adminPrincipalId = principalIdOpt.get();
+        String adminPrincipalId = auditContext.requirePrincipalId();
 
         try {
             userService.resetPassword(id, request.newPassword());
@@ -419,18 +350,9 @@ public class PrincipalAdminResource {
         @APIResponse(responseCode = "200", description = "List of roles"),
         @APIResponse(responseCode = "404", description = "Principal not found")
     })
-    public Response getPrincipalRoles(
-            @PathParam("id") String id,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response getPrincipalRoles(@PathParam("id") String id) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String adminPrincipalId = principalIdOpt.get();
+        auditContext.requirePrincipalId();
 
         if (!principalRepo.findByIdOptional(id).isPresent()) {
             return Response.status(Response.Status.NOT_FOUND)
@@ -459,17 +381,9 @@ public class PrincipalAdminResource {
     })
     public Response assignRole(
             @PathParam("id") String id,
-            @Valid AssignRoleRequest request,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+            @Valid AssignRoleRequest request) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String adminPrincipalId = principalIdOpt.get();
+        String adminPrincipalId = auditContext.requirePrincipalId();
 
         try {
             PrincipalRole assignment = roleService.assignRole(id, request.roleName(), "MANUAL");
@@ -506,17 +420,9 @@ public class PrincipalAdminResource {
     })
     public Response removeRole(
             @PathParam("id") String id,
-            @PathParam("roleName") String roleName,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+            @PathParam("roleName") String roleName) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String adminPrincipalId = principalIdOpt.get();
+        String adminPrincipalId = auditContext.requirePrincipalId();
 
         try {
             roleService.removeRole(id, roleName);
@@ -548,19 +454,9 @@ public class PrincipalAdminResource {
     })
     public Response assignRoles(
             @PathParam("id") String id,
-            @Valid AssignRolesRequest request,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+            @Valid AssignRolesRequest request) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String adminPrincipalId = principalIdOpt.get();
-
-        auditContext.setPrincipalId(adminPrincipalId);
+        String adminPrincipalId = auditContext.requirePrincipalId();
         ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
 
         // Build command
@@ -601,18 +497,9 @@ public class PrincipalAdminResource {
         @APIResponse(responseCode = "200", description = "List of client access grants"),
         @APIResponse(responseCode = "404", description = "Principal not found")
     })
-    public Response getClientAccessGrants(
-            @PathParam("id") String id,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response getClientAccessGrants(@PathParam("id") String id) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String adminPrincipalId = principalIdOpt.get();
+        auditContext.requirePrincipalId();
 
         if (!principalRepo.findByIdOptional(id).isPresent()) {
             return Response.status(Response.Status.NOT_FOUND)
@@ -641,19 +528,9 @@ public class PrincipalAdminResource {
     })
     public Response grantClientAccess(
             @PathParam("id") String id,
-            @Valid GrantClientAccessRequest request,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+            @Valid GrantClientAccessRequest request) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String adminPrincipalId = principalIdOpt.get();
-
-        auditContext.setPrincipalId(adminPrincipalId);
+        String adminPrincipalId = auditContext.requirePrincipalId();
         ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
 
         GrantClientAccessCommand command = new GrantClientAccessCommand(id, request.clientId(), null);
@@ -688,19 +565,9 @@ public class PrincipalAdminResource {
     })
     public Response revokeClientAccess(
             @PathParam("id") String id,
-            @PathParam("clientId") String clientId,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+            @PathParam("clientId") String clientId) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String adminPrincipalId = principalIdOpt.get();
-
-        auditContext.setPrincipalId(adminPrincipalId);
+        String adminPrincipalId = auditContext.requirePrincipalId();
         ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
 
         RevokeClientAccessCommand command = new RevokeClientAccessCommand(id, clientId);
@@ -717,21 +584,6 @@ public class PrincipalAdminResource {
     }
 
     // ==================== Helper Methods ====================
-
-    /**
-     * Require authentication. Returns unauthorized response if not authenticated,
-     * otherwise sets the audit context and returns null (proceed with request).
-     */
-    private Response requireAuth(String sessionToken, String authHeader) {
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        auditContext.setPrincipalId(principalIdOpt.get());
-        return null;
-    }
 
     private PrincipalDto toDto(Principal principal) {
         String email = null;
@@ -818,16 +670,9 @@ public class PrincipalAdminResource {
         @APIResponse(responseCode = "400", description = "Invalid email format")
     })
     public Response checkEmailDomain(
-            @QueryParam("email") @Parameter(description = "Email address to check") String email,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+            @QueryParam("email") @Parameter(description = "Email address to check") String email) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
+        auditContext.requirePrincipalId();
 
         if (email == null || !email.contains("@")) {
             return Response.status(Response.Status.BAD_REQUEST)

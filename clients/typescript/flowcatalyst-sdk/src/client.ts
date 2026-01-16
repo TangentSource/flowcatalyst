@@ -3,6 +3,8 @@ import type {
   EventType,
   Subscription,
   DispatchJob,
+  Client,
+  Application,
   ApiResponse
 } from './types'
 
@@ -67,6 +69,24 @@ export class FlowCatalystClient {
   }
 
   /**
+   * Clients API
+   */
+  async getClients(): Promise<ApiResponse<Client[]>> {
+    return this.request<Client[]>('/api/clients')
+  }
+
+  async getClient(id: string): Promise<ApiResponse<Client>> {
+    return this.request<Client>(`/api/clients/${id}`)
+  }
+
+  /**
+   * Applications API
+   */
+  async getClientApplications(clientId: string): Promise<ApiResponse<Application[]>> {
+    return this.request<Application[]>(`/api/clients/${clientId}/applications`)
+  }
+
+  /**
    * Internal request method
    */
   private async request<T>(
@@ -75,10 +95,10 @@ export class FlowCatalystClient {
   ): Promise<ApiResponse<T>> {
     const url = `${this.config.baseUrl}${path}`
 
-    const headers: HeadersInit = {
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(this.config.apiKey && { 'Authorization': `Bearer ${this.config.apiKey}` }),
-      ...options.headers,
+      ...(options.headers as Record<string, string>),
     }
 
     try {
@@ -99,7 +119,7 @@ export class FlowCatalystClient {
         }
       }
 
-      const data = await response.json()
+      const data = await response.json() as T
       return { data }
     } catch (error) {
       return {

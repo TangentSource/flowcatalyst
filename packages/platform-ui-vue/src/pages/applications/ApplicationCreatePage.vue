@@ -19,6 +19,9 @@ const name = ref('');
 const description = ref('');
 const defaultBaseUrl = ref('');
 const iconUrl = ref('');
+const website = ref('');
+const logo = ref('');
+const logoMimeType = ref('');
 const type = ref<ApplicationType>('APPLICATION');
 
 const typeOptions = [
@@ -60,6 +63,9 @@ async function onSubmit() {
       description: description.value || undefined,
       defaultBaseUrl: defaultBaseUrl.value || undefined,
       iconUrl: iconUrl.value || undefined,
+      website: website.value || undefined,
+      logo: logo.value || undefined,
+      logoMimeType: logoMimeType.value || undefined,
       type: type.value,
     });
 
@@ -181,6 +187,37 @@ function copyToClipboard(text: string) {
               class="full-width"
             />
             <small class="hint">URL to the application's icon image</small>
+          </div>
+
+          <div class="form-field">
+            <label>Website</label>
+            <InputText
+              v-model="website"
+              placeholder="https://www.example.com"
+              class="full-width"
+            />
+            <small class="hint">Public website URL for this application</small>
+          </div>
+
+          <div class="form-field">
+            <label>Logo (SVG)</label>
+            <Textarea
+              v-model="logo"
+              placeholder="Paste SVG content here"
+              :rows="4"
+              class="full-width"
+            />
+            <small class="hint">SVG logo content to embed in the platform</small>
+          </div>
+
+          <div class="form-field" v-if="logo">
+            <label>Logo MIME Type</label>
+            <InputText
+              v-model="logoMimeType"
+              placeholder="image/svg+xml"
+              class="full-width"
+            />
+            <small class="hint">MIME type of the logo (e.g., image/svg+xml)</small>
           </div>
         </section>
 

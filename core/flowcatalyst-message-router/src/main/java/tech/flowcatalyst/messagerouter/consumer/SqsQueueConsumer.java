@@ -13,7 +13,6 @@ import tech.flowcatalyst.messagerouter.warning.WarningService;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 public class SqsQueueConsumer extends AbstractQueueConsumer {
 
@@ -48,7 +47,7 @@ public class SqsQueueConsumer extends AbstractQueueConsumer {
         this.waitTimeSeconds = waitTimeSeconds;
         this.metricsPollIntervalMs = metricsPollIntervalSeconds * 1000;
 
-        LOG.warnf("*** SQS CONSUMER CREATED WITH ENHANCED LOGGING (v2) *** Queue: %s, MaxMessages: %d, WaitTime: %ds",
+        LOG.infof("SQS consumer created: queue=%s, maxMessages=%d, waitTime=%ds",
             queueUrl, maxMessagesPerPoll, waitTimeSeconds);
     }
 
@@ -59,8 +58,24 @@ public class SqsQueueConsumer extends AbstractQueueConsumer {
 
     @Override
     protected void consumeMessages() {
+        long loopCount = 0;
+        long lastLoopEndTime = System.currentTimeMillis();
+        Thread currentThread = Thread.currentThread();
+        LOG.infof("SQS polling started for queue [%s] on thread [%s] isVirtual=%s",
+            queueUrl, currentThread.getName(), currentThread.isVirtual());
+
         while (running.get()) {
             try {
+                loopCount++;
+                long loopStartTime = System.currentTimeMillis();
+
+                // Detect thread starvation: if more than 30s passed since last loop ended
+                long timeSinceLastLoop = loopStartTime - lastLoopEndTime;
+                if (loopCount > 1 && timeSinceLastLoop > 30_000) {
+                    LOG.warnf("SQS THREAD STARVATION DETECTED: queue [%s] loop #%d started %dms after loop #%d ended (expected <2s)",
+                        queueUrl, loopCount, timeSinceLastLoop, loopCount - 1);
+                }
+
                 // Update heartbeat to indicate consumer is alive and polling
                 updateHeartbeat();
 
@@ -111,22 +126,18 @@ public class SqsQueueConsumer extends AbstractQueueConsumer {
                 // Process remaining messages
                 processMessageBatch(messagesToProcess);
 
-                // Add adaptive delay based on batch size to improve batching efficiency:
-                // - Empty batch (0 messages): 1000ms delay (queue likely empty)
-                // - Partial batch (1-9 messages): 50ms delay (allow accumulation)
-                // - Full batch (10 messages): No delay (keep consuming at full speed)
-                if (messages.isEmpty()) {
-                    try {
-                        Thread.sleep(1000); // 1 second delay when queue is empty
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        break;
-                    }
-                } else if (messages.size() < maxMessagesPerPoll) {
+                // No delay for empty queue - SQS long-poll already waited up to 20 seconds
+                // Small delay for partial batches to allow message accumulation
+                if (messages.size() > 0 && messages.size() < maxMessagesPerPoll) {
                     try {
                         Thread.sleep(50); // 50ms delay for partial batch
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
+                        if (!running.get()) {
+                            LOG.debugf("Consumer thread interrupted during partial-batch sleep (shutdown) for queue [%s]", queueUrl);
+                        } else {
+                            LOG.warnf("Consumer thread unexpectedly interrupted during partial-batch sleep for queue [%s]", queueUrl);
+                        }
                         break;
                     }
                 }
@@ -138,6 +149,9 @@ public class SqsQueueConsumer extends AbstractQueueConsumer {
                     break;
                 }
 
+                // Track when this loop ended for starvation detection
+                lastLoopEndTime = System.currentTimeMillis();
+
             } catch (Exception e) {
                 if (running.get()) {
                     LOG.error("Error polling messages from SQS", e);
@@ -145,6 +159,7 @@ public class SqsQueueConsumer extends AbstractQueueConsumer {
                         Thread.sleep(1000); // Back off on error
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
+                        LOG.warnf("Consumer thread interrupted during error backoff sleep for queue [%s]", queueUrl);
                         break;
                     }
                 } else {
@@ -154,7 +169,7 @@ public class SqsQueueConsumer extends AbstractQueueConsumer {
                 }
             }
         }
-        LOG.infof("SQS consumer for queue [%s] polling loop exited cleanly", queueUrl);
+        LOG.infof("SQS consumer for queue [%s] polling loop exited after %d loops", queueUrl, loopCount);
     }
 
     /**

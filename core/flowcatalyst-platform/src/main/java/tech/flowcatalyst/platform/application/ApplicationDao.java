@@ -35,16 +35,17 @@ public interface ApplicationDao {
 
     @SqlUpdate("""
         INSERT INTO applications (id, code, name, description, type, default_base_url,
-            service_account_id, active, created_at, updated_at)
+            icon_url, website, logo, logo_mime_type, service_account_id, active, created_at, updated_at)
         VALUES (:id, :code, :name, :description, :type, :defaultBaseUrl,
-            :serviceAccountId, :active, :createdAt, :updatedAt)
+            :iconUrl, :website, :logo, :logoMimeType, :serviceAccountId, :active, :createdAt, :updatedAt)
         """)
     void insert(@BindFields Application application, @Bind("type") String type);
 
     @SqlUpdate("""
         UPDATE applications SET code = :code, name = :name, description = :description,
-            type = :type, default_base_url = :defaultBaseUrl, service_account_id = :serviceAccountId,
-            active = :active, updated_at = :updatedAt
+            type = :type, default_base_url = :defaultBaseUrl, icon_url = :iconUrl,
+            website = :website, logo = :logo, logo_mime_type = :logoMimeType,
+            service_account_id = :serviceAccountId, active = :active, updated_at = :updatedAt
         WHERE id = :id
         """)
     void update(@BindFields Application application, @Bind("type") String type);

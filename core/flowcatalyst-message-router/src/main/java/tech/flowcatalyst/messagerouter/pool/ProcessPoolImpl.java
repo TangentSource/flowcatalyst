@@ -16,6 +16,7 @@ import java.time.Duration;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Process pool implementation with per-message-group FIFO ordering using dedicated virtual threads.
@@ -99,6 +100,9 @@ public class ProcessPoolImpl implements ProcessPool {
     private final ConcurrentMap<String, MessagePointer> inPipelineMap;
     private final PoolMetricsService poolMetrics;
     private final WarningService warningService;
+
+    // Use ReentrantLock instead of synchronized to avoid pinning virtual threads
+    private final ReentrantLock configLock = new ReentrantLock();
 
     // Per-message-group queues for FIFO ordering within groups, concurrent across groups
     // Key: messageGroupId (e.g., "order-12345"), Value: Queue for that group's messages
@@ -291,6 +295,11 @@ public class ProcessPoolImpl implements ProcessPool {
                 break;
             }
             // Another thread modified counter, retry
+            // CRITICAL: On single-core environments, this spin loop can starve ALL other
+            // virtual threads (including consumers and scheduled tasks) because virtual
+            // threads use cooperative scheduling and only yield on blocking I/O.
+            Thread.onSpinWait(); // CPU optimization hint
+            Thread.yield();     // Allow virtual thread scheduler to run other threads
         }
 
         // Offer message to group queue (should always succeed since queues are unbounded)
@@ -399,7 +408,8 @@ public class ProcessPoolImpl implements ProcessPool {
             return false;
         }
 
-        synchronized (this) {
+        configLock.lock();
+        try {
             int currentLimit = concurrency;
 
             if (newLimit == currentLimit) {
@@ -439,6 +449,8 @@ public class ProcessPoolImpl implements ProcessPool {
                     return false;
                 }
             }
+        } finally {
+            configLock.unlock();
         }
     }
 
@@ -456,7 +468,8 @@ public class ProcessPoolImpl implements ProcessPool {
      */
     @Override
     public void updateRateLimit(Integer newRateLimitPerMinute) {
-        synchronized (this) {
+        configLock.lock();
+        try {
             Integer currentLimit = this.rateLimitPerMinute;
 
             if (currentLimit == null && newRateLimitPerMinute == null) {
@@ -490,6 +503,8 @@ public class ProcessPoolImpl implements ProcessPool {
                         .build()
                 );
             }
+        } finally {
+            configLock.unlock();
         }
     }
 

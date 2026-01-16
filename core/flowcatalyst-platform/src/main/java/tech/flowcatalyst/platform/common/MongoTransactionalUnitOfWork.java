@@ -48,8 +48,12 @@ import static org.bson.codecs.configuration.CodecRegistries.fromRegistries;
  *   <li>Aggregates must have a public {@code String id} field (TSID)</li>
  *   <li>Aggregates must have a {@code @MongoEntity} annotation or follow naming convention</li>
  * </ul>
+ *
+ * @deprecated Use {@link PostgresTransactionalUnitOfWork} instead. This MongoDB implementation
+ *             is disabled since the platform has migrated to PostgreSQL.
  */
-@ApplicationScoped
+@Deprecated
+// @ApplicationScoped  // Disabled - using PostgresTransactionalUnitOfWork instead
 public class MongoTransactionalUnitOfWork implements UnitOfWork {
 
     @Inject

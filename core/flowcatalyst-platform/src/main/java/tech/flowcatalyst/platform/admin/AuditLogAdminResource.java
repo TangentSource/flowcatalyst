@@ -10,10 +10,10 @@ import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
+import tech.flowcatalyst.platform.audit.AuditContext;
 import tech.flowcatalyst.platform.audit.AuditLog;
 import tech.flowcatalyst.platform.audit.AuditLogRepository;
 import tech.flowcatalyst.platform.authentication.EmbeddedModeOnly;
-import tech.flowcatalyst.platform.authentication.JwtKeyService;
 import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.PrincipalRepository;
 
@@ -38,7 +38,7 @@ public class AuditLogAdminResource {
     AuditLogRepository auditLogRepo;
 
     @Inject
-    JwtKeyService jwtKeyService;
+    AuditContext auditContext;
 
     @Inject
     PrincipalRepository principalRepo;
@@ -68,16 +68,9 @@ public class AuditLogAdminResource {
             @Parameter(description = "Page number (0-based)")
             @QueryParam("page") @DefaultValue("0") int page,
             @Parameter(description = "Page size")
-            @QueryParam("pageSize") @DefaultValue("50") int pageSize,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+            @QueryParam("pageSize") @DefaultValue("50") int pageSize) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
+        auditContext.requirePrincipalId();
 
         List<AuditLog> logs;
         long total;
@@ -122,17 +115,9 @@ public class AuditLogAdminResource {
         @APIResponse(responseCode = "404", description = "Audit log not found"),
         @APIResponse(responseCode = "401", description = "Not authenticated")
     })
-    public Response getAuditLog(
-            @PathParam("id") String id,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response getAuditLog(@PathParam("id") String id) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
+        auditContext.requirePrincipalId();
 
         AuditLog log = auditLogRepo.findById(id);
         if (log == null) {
@@ -157,16 +142,9 @@ public class AuditLogAdminResource {
     })
     public Response getAuditLogsForEntity(
             @PathParam("entityType") String entityType,
-            @PathParam("entityId") String entityId,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+            @PathParam("entityId") String entityId) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
+        auditContext.requirePrincipalId();
 
         List<AuditLog> logs = auditLogRepo.findByEntity(entityType, entityId);
         var response = logs.stream().map(this::toDto).toList();
@@ -190,16 +168,9 @@ public class AuditLogAdminResource {
         @APIResponse(responseCode = "200", description = "Entity types retrieved"),
         @APIResponse(responseCode = "401", description = "Not authenticated")
     })
-    public Response getEntityTypes(
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response getEntityTypes() {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
+        auditContext.requirePrincipalId();
 
         // Get distinct entity types using aggregation
         List<String> entityTypes = auditLogRepo.findDistinctEntityTypes();
@@ -218,16 +189,9 @@ public class AuditLogAdminResource {
         @APIResponse(responseCode = "200", description = "Operations retrieved"),
         @APIResponse(responseCode = "401", description = "Not authenticated")
     })
-    public Response getOperations(
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response getOperations() {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
+        auditContext.requirePrincipalId();
 
         // Get distinct operations using aggregation
         List<String> operations = auditLogRepo.findDistinctOperations();

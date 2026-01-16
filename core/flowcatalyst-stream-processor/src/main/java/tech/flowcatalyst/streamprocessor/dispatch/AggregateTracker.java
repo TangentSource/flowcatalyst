@@ -4,6 +4,7 @@ import org.bson.BsonDocument;
 import org.bson.Document;
 
 import java.util.*;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Logger;
 
 /**
@@ -30,7 +31,8 @@ public class AggregateTracker {
     private static final Logger LOG = Logger.getLogger(AggregateTracker.class.getName());
 
     private final String streamName;
-    private final Object lock = new Object();
+    // Use ReentrantLock instead of synchronized to avoid pinning virtual threads
+    private final ReentrantLock lock = new ReentrantLock();
 
     // Aggregate IDs currently being processed (batch_seq -> set of aggregate IDs)
     private final Map<Long, Set<String>> inFlight = new HashMap<>();
@@ -66,9 +68,12 @@ public class AggregateTracker {
         if (aggregateId == null) {
             return false;
         }
-        synchronized (lock) {
+        lock.lock();
+        try {
             return inFlight.values().stream()
                     .anyMatch(ids -> ids.contains(aggregateId));
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -79,10 +84,13 @@ public class AggregateTracker {
      * @param aggregateIds the set of aggregate IDs in this batch
      */
     public void registerBatch(long batchSeq, Set<String> aggregateIds) {
-        synchronized (lock) {
+        lock.lock();
+        try {
             inFlight.put(batchSeq, new HashSet<>(aggregateIds));
             LOG.fine("[" + streamName + "] Registered batch " + batchSeq +
                     " with " + aggregateIds.size() + " aggregate IDs");
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -97,7 +105,8 @@ public class AggregateTracker {
      * @return list of pending documents that are now ready (their aggregates are free)
      */
     public List<PendingDocument> completeBatch(long batchSeq) {
-        synchronized (lock) {
+        lock.lock();
+        try {
             // Remove this batch's aggregate IDs
             Set<String> removed = inFlight.remove(batchSeq);
             if (removed == null) {
@@ -128,6 +137,8 @@ public class AggregateTracker {
             }
 
             return ready;
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -137,10 +148,13 @@ public class AggregateTracker {
      * @param doc the pending document
      */
     public void addPending(PendingDocument doc) {
-        synchronized (lock) {
+        lock.lock();
+        try {
             pending.add(doc);
             LOG.fine("[" + streamName + "] Added pending document for aggregate " +
                     doc.aggregateId() + " (queue size: " + pending.size() + ")");
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -148,8 +162,11 @@ public class AggregateTracker {
      * Get the number of pending documents.
      */
     public int getPendingCount() {
-        synchronized (lock) {
+        lock.lock();
+        try {
             return pending.size();
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -157,8 +174,11 @@ public class AggregateTracker {
      * Get the number of in-flight batches.
      */
     public int getInFlightBatchCount() {
-        synchronized (lock) {
+        lock.lock();
+        try {
             return inFlight.size();
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -173,9 +193,12 @@ public class AggregateTracker {
      * Reset state (for testing).
      */
     public void reset() {
-        synchronized (lock) {
+        lock.lock();
+        try {
             inFlight.clear();
             pending.clear();
+        } finally {
+            lock.unlock();
         }
     }
 }

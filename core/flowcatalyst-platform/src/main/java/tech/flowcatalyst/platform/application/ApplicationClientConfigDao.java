@@ -44,16 +44,16 @@ public interface ApplicationClientConfigDao {
 
     @SqlUpdate("""
         INSERT INTO application_client_configs (id, application_id, client_id, enabled, base_url_override,
-            config_json, created_at, updated_at)
+            website_override, config_json, created_at, updated_at)
         VALUES (:id, :applicationId, :clientId, :enabled, :baseUrlOverride,
-            :configJson::jsonb, :createdAt, :updatedAt)
+            :websiteOverride, :configJson::jsonb, :createdAt, :updatedAt)
         """)
     void insert(@BindFields ApplicationClientConfig config, @Bind("configJson") String configJson);
 
     @SqlUpdate("""
         UPDATE application_client_configs SET application_id = :applicationId, client_id = :clientId,
-            enabled = :enabled, base_url_override = :baseUrlOverride, config_json = :configJson::jsonb,
-            updated_at = :updatedAt
+            enabled = :enabled, base_url_override = :baseUrlOverride, website_override = :websiteOverride,
+            config_json = :configJson::jsonb, updated_at = :updatedAt
         WHERE id = :id
         """)
     void update(@BindFields ApplicationClientConfig config, @Bind("configJson") String configJson);

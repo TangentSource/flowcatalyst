@@ -27,6 +27,7 @@ public class ApplicationClientConfigRowMapper implements RowMapper<ApplicationCl
         config.clientId = rs.getString("client_id");
         config.enabled = rs.getBoolean("enabled");
         config.baseUrlOverride = rs.getString("base_url_override");
+        config.websiteOverride = rs.getString("website_override");
 
         // Map JSONB to Map<String, Object>
         String configJson = rs.getString("config_json");

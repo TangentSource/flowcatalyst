@@ -4,6 +4,7 @@ import org.bson.BsonDocument;
 import tech.flowcatalyst.streamprocessor.checkpoint.CheckpointStore;
 
 import java.util.TreeMap;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Logger;
 
 /**
@@ -34,7 +35,8 @@ public class CheckpointTracker {
 
     private final TreeMap<Long, BatchResult> batches = new TreeMap<>();
     private long lastCheckpointedSeq = 0;
-    private final Object lock = new Object();
+    // Use ReentrantLock instead of synchronized to avoid pinning virtual threads
+    private final ReentrantLock lock = new ReentrantLock();
 
     // Track if we've had a fatal error
     private volatile Exception fatalError = null;
@@ -59,9 +61,12 @@ public class CheckpointTracker {
      * @param resumeToken the change stream resume token for this batch
      */
     public void markComplete(long seq, BsonDocument resumeToken) {
-        synchronized (lock) {
+        lock.lock();
+        try {
             batches.put(seq, new BatchResult(resumeToken, true, null));
             advanceCheckpoint();
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -72,10 +77,13 @@ public class CheckpointTracker {
      * @param error the error that caused the failure
      */
     public void markFailed(long seq, Exception error) {
-        synchronized (lock) {
+        lock.lock();
+        try {
             batches.put(seq, new BatchResult(null, false, error));
             this.fatalError = error;
             // Don't advance checkpoint - we're failing
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -116,8 +124,11 @@ public class CheckpointTracker {
      * Get the number of batches currently in flight.
      */
     public int getInFlightCount() {
-        synchronized (lock) {
+        lock.lock();
+        try {
             return batches.size();
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -139,10 +150,13 @@ public class CheckpointTracker {
      * Reset state (for testing).
      */
     public void reset() {
-        synchronized (lock) {
+        lock.lock();
+        try {
             batches.clear();
             lastCheckpointedSeq = 0;
             fatalError = null;
+        } finally {
+            lock.unlock();
         }
     }
 

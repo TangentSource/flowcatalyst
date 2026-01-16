@@ -14,9 +14,11 @@ val quarkusPlatformArtifactId: String by project
 val quarkusPlatformVersion: String by project
 val resilience4jVersion: String by project
 
-// Exclude netty-nio-client globally - it references AWS CRT classes that cause native image issues
+// Exclude clients we don't use - using Apache HTTP client for virtual thread compatibility
 configurations.all {
     exclude(group = "software.amazon.awssdk", module = "netty-nio-client")
+    exclude(group = "software.amazon.awssdk", module = "url-connection-client")
+    exclude(group = "software.amazon.awssdk", module = "aws-crt-client")  // JNI pins carrier threads, incompatible with virtual threads
 }
 
 dependencies {
@@ -45,11 +47,11 @@ dependencies {
     // Health checks
     implementation("io.quarkus:quarkus-smallrye-health")
 
-    // Message Queues - use Quarkus extension with URL connection client
+    // Message Queues - use Apache HTTP client for virtual thread compatibility
+    // Apache HttpComponents 5.x is more Loom-friendly than URL Connection client
+    // (CRT client uses JNI which pins carrier threads during 20s long polls)
     implementation("io.quarkiverse.amazonservices:quarkus-amazon-sqs")
-    implementation("io.quarkiverse.amazonservices:quarkus-amazon-crt") // Native image support
-    implementation("com.github.jnr:jnr-unixsocket:0.38.22") // Required by aws-crt for native builds
-    implementation("software.amazon.awssdk:url-connection-client")
+    implementation("software.amazon.awssdk:apache-client")
     implementation("org.apache.activemq:activemq-client:6.1.7")
     implementation("io.nats:jnats:2.24.1") {
         exclude(group = "net.i2p.crypto", module = "eddsa") // Not needed - NKey auth not used, breaks GraalVM native
@@ -100,11 +102,11 @@ dependencies {
 
 
 group = "tech.flowcatalyst"
-version = "1.0.0-SNAPSHOT"
+version = "1.0.6-SNAPSHOT"
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_25
-    targetCompatibility = JavaVersion.VERSION_25
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
 }
 
 // Unit tests (no @QuarkusTest)
@@ -164,7 +166,11 @@ jib {
         jvmFlags = listOf(
             "-XX:+UseContainerSupport",
             "-XX:MaxRAMPercentage=75.0",
-            "-Djava.security.egd=file:/dev/./urandom"
+            "-Djava.security.egd=file:/dev/./urandom",
+            // Force minimum 2 carrier threads for virtual thread scheduler
+            // This prevents starvation on single-core containers
+            "-Djdk.virtualThreadScheduler.parallelism=2",
+            "-Djdk.virtualThreadScheduler.maxPoolSize=512"
         )
         ports = listOf("8080")
         labels.put("maintainer", "flowcatalyst@example.com")

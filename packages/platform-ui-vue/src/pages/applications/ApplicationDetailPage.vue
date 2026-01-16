@@ -27,6 +27,9 @@ const editName = ref('');
 const editDescription = ref('');
 const editDefaultBaseUrl = ref('');
 const editIconUrl = ref('');
+const editWebsite = ref('');
+const editLogo = ref('');
+const editLogoMimeType = ref('');
 
 // Service account provisioning
 const provisioning = ref(false);
@@ -57,6 +60,9 @@ function startEditing() {
     editDescription.value = application.value.description || '';
     editDefaultBaseUrl.value = application.value.defaultBaseUrl || '';
     editIconUrl.value = application.value.iconUrl || '';
+    editWebsite.value = application.value.website || '';
+    editLogo.value = application.value.logo || '';
+    editLogoMimeType.value = application.value.logoMimeType || '';
     editing.value = true;
   }
 }
@@ -76,6 +82,9 @@ async function saveChanges() {
       description: editDescription.value || undefined,
       defaultBaseUrl: editDefaultBaseUrl.value || undefined,
       iconUrl: editIconUrl.value || undefined,
+      website: editWebsite.value || undefined,
+      logo: editLogo.value || undefined,
+      logoMimeType: editLogoMimeType.value || undefined,
     });
     editing.value = false;
     toast.add({ severity: 'success', summary: 'Success', detail: 'Application updated', life: 3000 });
@@ -255,6 +264,18 @@ function formatDate(dateString: string) {
               <label>Icon URL</label>
               <InputText v-model="editIconUrl" class="full-width" placeholder="https://example.com/icon.png" />
             </div>
+            <div class="form-field">
+              <label>Website</label>
+              <InputText v-model="editWebsite" class="full-width" placeholder="https://www.example.com" />
+            </div>
+            <div class="form-field">
+              <label>Logo (SVG)</label>
+              <Textarea v-model="editLogo" :rows="4" class="full-width" placeholder="Paste SVG content here" />
+            </div>
+            <div class="form-field" v-if="editLogo">
+              <label>Logo MIME Type</label>
+              <InputText v-model="editLogoMimeType" class="full-width" placeholder="image/svg+xml" />
+            </div>
             <div class="form-actions">
               <Button label="Cancel" severity="secondary" outlined @click="cancelEditing" />
               <Button label="Save" :loading="saving" @click="saveChanges" />
@@ -282,6 +303,15 @@ function formatDate(dateString: string) {
               <div class="detail-item">
                 <label>Icon URL</label>
                 <span>{{ application.iconUrl || '—' }}</span>
+              </div>
+              <div class="detail-item">
+                <label>Website</label>
+                <span>{{ application.website || '—' }}</span>
+              </div>
+              <div class="detail-item">
+                <label>Logo</label>
+                <span v-if="application.logo">{{ application.logoMimeType || 'Configured' }}</span>
+                <span v-else>—</span>
               </div>
               <div class="detail-item">
                 <label>Created</label>

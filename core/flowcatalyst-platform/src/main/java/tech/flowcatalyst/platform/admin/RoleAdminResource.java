@@ -13,7 +13,6 @@ import tech.flowcatalyst.platform.application.Application;
 import tech.flowcatalyst.platform.application.ApplicationRepository;
 import tech.flowcatalyst.platform.audit.AuditContext;
 import tech.flowcatalyst.platform.authentication.EmbeddedModeOnly;
-import tech.flowcatalyst.platform.authentication.JwtKeyService;
 import tech.flowcatalyst.platform.authorization.*;
 import tech.flowcatalyst.platform.authorization.events.RoleCreated;
 import tech.flowcatalyst.platform.authorization.events.RoleDeleted;
@@ -62,9 +61,6 @@ public class RoleAdminResource {
     ApplicationRepository applicationRepository;
 
     @Inject
-    JwtKeyService jwtKeyService;
-
-    @Inject
     AuditContext auditContext;
 
     @Inject
@@ -85,16 +81,9 @@ public class RoleAdminResource {
     })
     public Response listRoles(
             @QueryParam("application") String application,
-            @QueryParam("source") String source,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+            @QueryParam("source") String source) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
-                .build();
-        }
+        auditContext.requirePrincipalId();
 
         List<AuthRole> roles;
         if (application != null && !application.isBlank()) {
@@ -136,17 +125,9 @@ public class RoleAdminResource {
             content = @Content(schema = @Schema(implementation = RoleDto.class))),
         @APIResponse(responseCode = "404", description = "Role not found")
     })
-    public Response getRole(
-            @PathParam("roleName") String roleName,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response getRole(@PathParam("roleName") String roleName) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
-                .build();
-        }
+        auditContext.requirePrincipalId();
 
         return roleService.getRoleByName(roleName)
             .map(role -> Response.ok(toRoleDto(role)).build())
@@ -169,18 +150,9 @@ public class RoleAdminResource {
         @APIResponse(responseCode = "404", description = "Application not found"),
         @APIResponse(responseCode = "409", description = "Role already exists")
     })
-    public Response createRole(
-            CreateRoleRequest request,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response createRole(CreateRoleRequest request) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
-                .build();
-        }
-        String principalId = principalIdOpt.get();
+        String principalId = auditContext.requirePrincipalId();
 
         // Validate request
         if (request.applicationCode() == null || request.applicationCode().isBlank()) {
@@ -203,8 +175,7 @@ public class RoleAdminResource {
                 .build();
         }
 
-        // Set audit context and create execution context
-        auditContext.setPrincipalId(principalId);
+        // Create execution context (audit context already set by filter)
         ExecutionContext context = ExecutionContext.from(tracingContext, principalId);
 
         CreateRoleCommand command = new CreateRoleCommand(
@@ -243,20 +214,11 @@ public class RoleAdminResource {
     })
     public Response updateRole(
             @PathParam("roleName") String roleName,
-            UpdateRoleRequest request,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+            UpdateRoleRequest request) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
-                .build();
-        }
-        String principalId = principalIdOpt.get();
+        String principalId = auditContext.requirePrincipalId();
 
-        // Set audit context and create execution context
-        auditContext.setPrincipalId(principalId);
+        // Create execution context (audit context already set by filter)
         ExecutionContext context = ExecutionContext.from(tracingContext, principalId);
 
         UpdateRoleCommand command = new UpdateRoleCommand(
@@ -290,21 +252,11 @@ public class RoleAdminResource {
         @APIResponse(responseCode = "400", description = "Cannot delete CODE-defined role"),
         @APIResponse(responseCode = "404", description = "Role not found")
     })
-    public Response deleteRole(
-            @PathParam("roleName") String roleName,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response deleteRole(@PathParam("roleName") String roleName) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
-                .build();
-        }
-        String principalId = principalIdOpt.get();
+        String principalId = auditContext.requirePrincipalId();
 
-        // Set audit context and create execution context
-        auditContext.setPrincipalId(principalId);
+        // Create execution context (audit context already set by filter)
         ExecutionContext context = ExecutionContext.from(tracingContext, principalId);
 
         DeleteRoleCommand command = new DeleteRoleCommand(roleName);
@@ -332,16 +284,9 @@ public class RoleAdminResource {
             content = @Content(schema = @Schema(implementation = PermissionListResponse.class))),
         @APIResponse(responseCode = "401", description = "Not authenticated")
     })
-    public Response listPermissions(
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response listPermissions() {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
-                .build();
-        }
+        auditContext.requirePrincipalId();
 
         Collection<PermissionDefinition> permissions = permissionRegistry.getAllPermissions();
 
@@ -363,17 +308,9 @@ public class RoleAdminResource {
         @APIResponse(responseCode = "200", description = "Permission details"),
         @APIResponse(responseCode = "404", description = "Permission not found")
     })
-    public Response getPermission(
-            @PathParam("permission") String permission,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response getPermission(@PathParam("permission") String permission) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("UNAUTHORIZED", "Not authenticated"))
-                .build();
-        }
+        auditContext.requirePrincipalId();
 
         return permissionRegistry.getPermission(permission)
             .map(perm -> Response.ok(toPermissionDto(perm)).build())

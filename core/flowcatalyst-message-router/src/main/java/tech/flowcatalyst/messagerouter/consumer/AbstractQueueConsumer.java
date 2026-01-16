@@ -81,9 +81,11 @@ public abstract class AbstractQueueConsumer implements QueueConsumer {
      */
     protected void processMessageBatch(List<RawMessage> rawMessages) {
         String queueId = getQueueIdentifier();
+        int instanceId = System.identityHashCode(this);
 
         if (!rawMessages.isEmpty()) {
-            LOG.warnf("==> QueueConsumer: Received %d message(s) from queue [%s] <==", rawMessages.size(), queueId);
+            LOG.warnf("==> QueueConsumer: Received %d message(s) from queue [%s] (instanceId=%d) <==",
+                rawMessages.size(), queueId, instanceId);
         }
 
         List<QueueManager.BatchMessage> batchMessages = new ArrayList<>();

@@ -135,6 +135,9 @@ export type ClientApplicationDto = {
   name?: string;
   description?: string;
   iconUrl?: string;
+  website?: string;
+  effectiveWebsite?: string;
+  logoMimeType?: string;
   active?: boolean;
   enabledForClient?: boolean;
 };
@@ -147,6 +150,7 @@ export type ClientApplicationsResponse = {
 export type ClientConfigRequest = {
   enabled?: boolean;
   baseUrlOverride?: string;
+  websiteOverride?: string;
   config?: {
     [key: string]: unknown;
   };
@@ -246,6 +250,9 @@ export type CreateApplicationRequest = {
   description?: string;
   defaultBaseUrl?: string;
   iconUrl?: string;
+  website?: string;
+  logo?: string;
+  logoMimeType?: string;
   type?: string;
 };
 
@@ -1071,6 +1078,9 @@ export type UpdateApplicationRequest = {
   description?: string;
   defaultBaseUrl?: string;
   iconUrl?: string;
+  website?: string;
+  logo?: string;
+  logoMimeType?: string;
 };
 
 export type UpdateApplicationRequest1 = {

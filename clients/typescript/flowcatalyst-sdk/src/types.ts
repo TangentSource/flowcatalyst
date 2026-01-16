@@ -34,6 +34,21 @@ export interface DispatchJob {
   completedAt?: string
 }
 
+export interface Client {
+  id: string
+  name: string
+  code?: string
+  domain?: string
+}
+
+export interface Application {
+  id: string
+  name: string
+  code?: string
+  website: string
+  logo?: string // SVG text (optional)
+}
+
 export interface ApiResponse<T> {
   data?: T
   error?: string

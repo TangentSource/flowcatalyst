@@ -17,8 +17,8 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
 import tech.flowcatalyst.platform.application.Application;
 import tech.flowcatalyst.platform.application.ApplicationRepository;
+import tech.flowcatalyst.platform.audit.AuditContext;
 import tech.flowcatalyst.platform.authentication.EmbeddedModeOnly;
-import tech.flowcatalyst.platform.authentication.JwtKeyService;
 import tech.flowcatalyst.platform.authentication.oauth.OAuthClient;
 import tech.flowcatalyst.platform.authentication.oauth.OAuthClient.ClientType;
 import tech.flowcatalyst.platform.authentication.oauth.OAuthClientRepository;
@@ -69,7 +69,7 @@ public class OAuthClientAdminResource {
     SecretService secretService;
 
     @Inject
-    JwtKeyService jwtKeyService;
+    AuditContext auditContext;
 
     // ==================== CRUD Operations ====================
 
@@ -85,16 +85,9 @@ public class OAuthClientAdminResource {
     })
     public Response listClients(
             @QueryParam("applicationId") @Parameter(description = "Filter by associated application") String applicationId,
-            @QueryParam("active") @Parameter(description = "Filter by active status") Boolean active,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+            @QueryParam("active") @Parameter(description = "Filter by active status") Boolean active) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
+        auditContext.requirePrincipalId();
 
         List<OAuthClient> clients;
         if (applicationId != null && active != null) {
@@ -135,17 +128,9 @@ public class OAuthClientAdminResource {
             content = @Content(schema = @Schema(implementation = ClientDto.class))),
         @APIResponse(responseCode = "404", description = "Client not found")
     })
-    public Response getClient(
-            @PathParam("id") String id,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response getClient(@PathParam("id") String id) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
+        auditContext.requirePrincipalId();
 
         return clientRepo.findByIdOptional(id)
             .map(client -> {
@@ -167,17 +152,9 @@ public class OAuthClientAdminResource {
         @APIResponse(responseCode = "200", description = "Client details"),
         @APIResponse(responseCode = "404", description = "Client not found")
     })
-    public Response getClientByClientId(
-            @PathParam("clientId") String clientId,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response getClientByClientId(@PathParam("clientId") String clientId) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
+        auditContext.requirePrincipalId();
 
         // Strip prefix to get internal ID
         String internalClientId = toInternalClientId(clientId);
@@ -208,17 +185,9 @@ public class OAuthClientAdminResource {
     })
     public Response createClient(
             @Valid CreateClientRequest request,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader,
             @Context UriInfo uriInfo) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String adminPrincipalId = principalIdOpt.get();
+        String adminPrincipalId = auditContext.requirePrincipalId();
 
         // Validate redirect URIs use HTTPS (except localhost)
         String redirectUriError = validateSecureUrls(request.redirectUris(), "Redirect URI");
@@ -323,17 +292,9 @@ public class OAuthClientAdminResource {
     })
     public Response updateClient(
             @PathParam("id") String id,
-            @Valid UpdateClientRequest request,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+            @Valid UpdateClientRequest request) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                    .entity(new ErrorResponse("Not authenticated"))
-                    .build();
-        }
-        String adminPrincipalId = principalIdOpt.get();
+        String adminPrincipalId = auditContext.requirePrincipalId();
 
         OAuthClient client = clientRepo.findByIdOptional(id).orElse(null);
         if (client == null) {
@@ -450,18 +411,9 @@ public class OAuthClientAdminResource {
         @APIResponse(responseCode = "400", description = "Cannot rotate secret for public client"),
         @APIResponse(responseCode = "404", description = "Client not found")
     })
-    public Response rotateSecret(
-            @PathParam("id") String id,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response rotateSecret(@PathParam("id") String id) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                    .entity(new ErrorResponse("Not authenticated"))
-                    .build();
-        }
-        String adminPrincipalId = principalIdOpt.get();
+        String adminPrincipalId = auditContext.requirePrincipalId();
 
         OAuthClient client = clientRepo.findByIdOptional(id).orElse(null);
         if (client == null) {
@@ -497,18 +449,9 @@ public class OAuthClientAdminResource {
         @APIResponse(responseCode = "200", description = "Client activated"),
         @APIResponse(responseCode = "404", description = "Client not found")
     })
-    public Response activateClient(
-            @PathParam("id") String id,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response activateClient(@PathParam("id") String id) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                    .entity(new ErrorResponse("Not authenticated"))
-                    .build();
-        }
-        String adminPrincipalId = principalIdOpt.get();
+        String adminPrincipalId = auditContext.requirePrincipalId();
 
         OAuthClient client = clientRepo.findByIdOptional(id).orElse(null);
         if (client == null) {
@@ -535,18 +478,9 @@ public class OAuthClientAdminResource {
         @APIResponse(responseCode = "200", description = "Client deactivated"),
         @APIResponse(responseCode = "404", description = "Client not found")
     })
-    public Response deactivateClient(
-            @PathParam("id") String id,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response deactivateClient(@PathParam("id") String id) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String adminPrincipalId = principalIdOpt.get();
+        String adminPrincipalId = auditContext.requirePrincipalId();
 
         OAuthClient client = clientRepo.findByIdOptional(id).orElse(null);
         if (client == null) {
@@ -573,18 +507,9 @@ public class OAuthClientAdminResource {
         @APIResponse(responseCode = "204", description = "Client deleted"),
         @APIResponse(responseCode = "404", description = "Client not found")
     })
-    public Response deleteClient(
-            @PathParam("id") String id,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response deleteClient(@PathParam("id") String id) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String adminPrincipalId = principalIdOpt.get();
+        String adminPrincipalId = auditContext.requirePrincipalId();
 
         OAuthClient client = clientRepo.findByIdOptional(id).orElse(null);
         if (client == null) {

@@ -10,6 +10,9 @@ export interface Application {
   description?: string;
   defaultBaseUrl?: string;
   iconUrl?: string;
+  website?: string;
+  logo?: string;
+  logoMimeType?: string;
   serviceAccountPrincipalId?: string;
   active: boolean;
   createdAt: string;
@@ -41,6 +44,9 @@ export interface CreateApplicationRequest {
   description?: string;
   defaultBaseUrl?: string;
   iconUrl?: string;
+  website?: string;
+  logo?: string;
+  logoMimeType?: string;
   type?: ApplicationType;  // Defaults to APPLICATION
 }
 
@@ -49,6 +55,9 @@ export interface UpdateApplicationRequest {
   description?: string;
   defaultBaseUrl?: string;
   iconUrl?: string;
+  website?: string;
+  logo?: string;
+  logoMimeType?: string;
 }
 
 export interface ListApplicationsOptions {

@@ -14,9 +14,9 @@ import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
+import tech.flowcatalyst.platform.audit.AuditContext;
 import tech.flowcatalyst.platform.authentication.AuthProvider;
 import tech.flowcatalyst.platform.authentication.EmbeddedModeOnly;
-import tech.flowcatalyst.platform.authentication.JwtKeyService;
 import tech.flowcatalyst.platform.authorization.AuthorizationService;
 import tech.flowcatalyst.platform.authorization.platform.PlatformIamPermissions;
 import tech.flowcatalyst.platform.client.AuthConfigType;
@@ -51,7 +51,7 @@ public class ClientAuthConfigAdminResource {
     ClientAuthConfigService authConfigService;
 
     @Inject
-    JwtKeyService jwtKeyService;
+    AuditContext auditContext;
 
     @Inject
     AuthorizationService authorizationService;
@@ -70,16 +70,9 @@ public class ClientAuthConfigAdminResource {
         @APIResponse(responseCode = "403", description = "Insufficient permissions")
     })
     public Response listAuthConfigs(
-            @QueryParam("clientId") @Parameter(description = "Filter by client ID") String clientId,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+            @QueryParam("clientId") @Parameter(description = "Filter by client ID") String clientId) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
+        auditContext.requirePrincipalId();
 
         List<ClientAuthConfig> configs;
         if (clientId != null) {
@@ -107,17 +100,9 @@ public class ClientAuthConfigAdminResource {
         @APIResponse(responseCode = "404", description = "Auth configuration not found"),
         @APIResponse(responseCode = "401", description = "Not authenticated")
     })
-    public Response getAuthConfig(
-            @PathParam("id") String id,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response getAuthConfig(@PathParam("id") String id) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
+        auditContext.requirePrincipalId();
 
         return authConfigService.findById(id)
             .map(config -> Response.ok(toDto(config)).build())
@@ -136,17 +121,9 @@ public class ClientAuthConfigAdminResource {
         @APIResponse(responseCode = "200", description = "Auth configuration details"),
         @APIResponse(responseCode = "404", description = "No configuration for this domain")
     })
-    public Response getAuthConfigByDomain(
-            @PathParam("domain") String domain,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response getAuthConfigByDomain(@PathParam("domain") String domain) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
+        auditContext.requirePrincipalId();
 
         return authConfigService.findByEmailDomain(domain)
             .map(config -> Response.ok(toDto(config)).build())
@@ -172,17 +149,9 @@ public class ClientAuthConfigAdminResource {
     })
     public Response createInternalConfig(
             @Valid CreateInternalConfigRequest request,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader,
             @Context UriInfo uriInfo) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String principalId = principalIdOpt.get();
+        String principalId = auditContext.requirePrincipalId();
 
         // Require IDP manage permission
         if (!authorizationService.hasPermission(principalId, PlatformIamPermissions.IDP_MANAGE.toPermissionString())) {
@@ -226,17 +195,9 @@ public class ClientAuthConfigAdminResource {
     })
     public Response createOidcConfig(
             @Valid CreateOidcConfigRequest request,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader,
             @Context UriInfo uriInfo) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String principalId = principalIdOpt.get();
+        String principalId = auditContext.requirePrincipalId();
 
         // Require IDP manage permission
         if (!authorizationService.hasPermission(principalId, PlatformIamPermissions.IDP_MANAGE.toPermissionString())) {
@@ -286,17 +247,9 @@ public class ClientAuthConfigAdminResource {
     })
     public Response updateOidcConfig(
             @PathParam("id") String id,
-            @Valid UpdateOidcConfigRequest request,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+            @Valid UpdateOidcConfigRequest request) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String principalId = principalIdOpt.get();
+        String principalId = auditContext.requirePrincipalId();
 
         // Require IDP manage permission
         if (!authorizationService.hasPermission(principalId, PlatformIamPermissions.IDP_MANAGE.toPermissionString())) {
@@ -346,17 +299,9 @@ public class ClientAuthConfigAdminResource {
     })
     public Response updateClientBinding(
             @PathParam("id") String id,
-            @Valid UpdateClientBindingRequest request,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+            @Valid UpdateClientBindingRequest request) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String principalId = principalIdOpt.get();
+        String principalId = auditContext.requirePrincipalId();
 
         // Require IDP manage permission
         if (!authorizationService.hasPermission(principalId, PlatformIamPermissions.IDP_MANAGE.toPermissionString())) {
@@ -393,17 +338,9 @@ public class ClientAuthConfigAdminResource {
     })
     public Response updateConfigType(
             @PathParam("id") String id,
-            @Valid UpdateConfigTypeRequest request,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+            @Valid UpdateConfigTypeRequest request) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String principalId = principalIdOpt.get();
+        String principalId = auditContext.requirePrincipalId();
 
         if (!authorizationService.hasPermission(principalId, PlatformIamPermissions.IDP_MANAGE.toPermissionString())) {
             return Response.status(Response.Status.FORBIDDEN)
@@ -444,17 +381,9 @@ public class ClientAuthConfigAdminResource {
     })
     public Response updateAdditionalClients(
             @PathParam("id") String id,
-            @Valid UpdateAdditionalClientsRequest request,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+            @Valid UpdateAdditionalClientsRequest request) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String principalId = principalIdOpt.get();
+        String principalId = auditContext.requirePrincipalId();
 
         if (!authorizationService.hasPermission(principalId, PlatformIamPermissions.IDP_MANAGE.toPermissionString())) {
             return Response.status(Response.Status.FORBIDDEN)
@@ -495,17 +424,9 @@ public class ClientAuthConfigAdminResource {
     })
     public Response updateGrantedClients(
             @PathParam("id") String id,
-            @Valid UpdateGrantedClientsRequest request,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+            @Valid UpdateGrantedClientsRequest request) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String principalId = principalIdOpt.get();
+        String principalId = auditContext.requirePrincipalId();
 
         if (!authorizationService.hasPermission(principalId, PlatformIamPermissions.IDP_MANAGE.toPermissionString())) {
             return Response.status(Response.Status.FORBIDDEN)
@@ -544,18 +465,9 @@ public class ClientAuthConfigAdminResource {
         @APIResponse(responseCode = "204", description = "Configuration deleted"),
         @APIResponse(responseCode = "404", description = "Configuration not found")
     })
-    public Response deleteAuthConfig(
-            @PathParam("id") String id,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response deleteAuthConfig(@PathParam("id") String id) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
-        String principalId = principalIdOpt.get();
+        String principalId = auditContext.requirePrincipalId();
 
         // Require IDP manage permission
         if (!authorizationService.hasPermission(principalId, PlatformIamPermissions.IDP_MANAGE.toPermissionString())) {
@@ -590,17 +502,9 @@ public class ClientAuthConfigAdminResource {
             content = @Content(schema = @Schema(implementation = SecretValidationResponse.class))),
         @APIResponse(responseCode = "401", description = "Not authenticated")
     })
-    public Response validateSecretReference(
-            @Valid ValidateSecretRequest request,
-            @CookieParam("fc_session") String sessionToken,
-            @HeaderParam("Authorization") String authHeader) {
+    public Response validateSecretReference(@Valid ValidateSecretRequest request) {
 
-        var principalIdOpt = jwtKeyService.extractAndValidatePrincipalId(sessionToken, authHeader);
-        if (principalIdOpt.isEmpty()) {
-            return Response.status(Response.Status.UNAUTHORIZED)
-                .entity(new ErrorResponse("Not authenticated"))
-                .build();
-        }
+        auditContext.requirePrincipalId();
 
         ValidationResult result = authConfigService.validateSecretReference(request.secretRef());
 

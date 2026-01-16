@@ -48,6 +48,26 @@ public class Application {
     public String iconUrl;
 
     /**
+     * Public website URL for this application/integration.
+     * Example: https://www.yardmanagement.com
+     * Can be overridden per client via ApplicationClientConfig.websiteOverride.
+     */
+    public String website;
+
+    /**
+     * Embedded logo content (SVG/vector format).
+     * Stored directly in the database.
+     * Use logoMimeType to determine the format.
+     */
+    public String logo;
+
+    /**
+     * MIME type of the logo content.
+     * Example: "image/svg+xml" for SVG logos.
+     */
+    public String logoMimeType;
+
+    /**
      * Default base URL for the application.
      * Can be overridden per tenant via ApplicationTenantConfig.
      * Primarily used for APPLICATION type.
