@@ -86,6 +86,18 @@ export class QueueManagerService {
 
 	// Process pools
 	private readonly processPools = new Map<string, ProcessPool>();
+	private readonly drainingPools = new Map<string, ProcessPool>();
+	private readonly drainingConsumers = new Map<string, SqsConsumer>();
+
+	// Pool limits (matching Java)
+	private readonly maxPools = env.MAX_POOLS;
+	private readonly poolWarningThreshold = Math.floor(env.MAX_POOLS * 0.5); // 50% threshold
+
+	// Sync lock to prevent concurrent config syncs
+	private syncLock: Promise<void> | null = null;
+
+	// Cleanup interval
+	private cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
 	// Queue and pool statistics
 	private readonly queueStats = new Map<string, QueueStats>();
@@ -152,6 +164,7 @@ export class QueueManagerService {
 		if (env.QUEUE_TYPE === 'EMBEDDED') {
 			// Use embedded mode with SQLite-backed queue
 			await this.initializeEmbeddedMode();
+			this.startCleanupTask();
 			this.running = true;
 			this.logger.info('Queue manager started in embedded mode');
 			return;
@@ -160,6 +173,7 @@ export class QueueManagerService {
 		if (env.QUEUE_TYPE === 'ACTIVEMQ') {
 			// Use ActiveMQ mode
 			await this.initializeActiveMqMode();
+			this.startCleanupTask();
 			this.running = true;
 			this.logger.info('Queue manager started in ActiveMQ mode');
 			return;
@@ -168,6 +182,7 @@ export class QueueManagerService {
 		if (env.QUEUE_TYPE === 'NATS') {
 			// Use NATS JetStream mode
 			await this.initializeNatsMode();
+			this.startCleanupTask();
 			this.running = true;
 			this.logger.info('Queue manager started in NATS mode');
 			return;
@@ -207,8 +222,73 @@ export class QueueManagerService {
 			await this.initializeEmbeddedMode();
 		}
 
+		// Start cleanup task (matches Java scheduled tasks)
+		this.startCleanupTask();
+
 		this.running = true;
 		this.logger.info('Queue manager started');
+	}
+
+	/**
+	 * Start scheduled cleanup task for draining pools and consumers
+	 * Matches Java QueueManager.cleanupDrainingResources()
+	 */
+	private startCleanupTask(): void {
+		// Run every 10 seconds (matches Java)
+		this.cleanupInterval = setInterval(() => {
+			this.cleanupDrainingResources();
+		}, 10_000);
+		this.logger.debug('Cleanup task started (10s interval)');
+	}
+
+	/**
+	 * Cleanup drained pools and consumers
+	 * Called periodically to remove fully drained resources
+	 */
+	private cleanupDrainingResources(): void {
+		if (!this.running) return;
+
+		// Cleanup fully drained pools
+		for (const [code, pool] of this.drainingPools) {
+			if (pool.isDrained()) {
+				this.logger.info({ poolCode: code }, 'Draining pool fully drained, shutting down');
+				pool.shutdown().catch((err) => {
+					this.logger.error({ err, poolCode: code }, 'Error shutting down drained pool');
+				});
+				this.drainingPools.delete(code);
+			} else {
+				const stats = pool.getStats();
+				this.logger.debug(
+					{
+						poolCode: code,
+						queueSize: stats.queueSize,
+						activeWorkers: stats.activeWorkers,
+					},
+					'Pool still draining',
+				);
+			}
+		}
+
+		// Cleanup fully stopped consumers
+		for (const [queueUri, consumer] of this.drainingConsumers) {
+			if (consumer.isFullyStopped()) {
+				this.logger.info({ queueUri }, 'Draining consumer fully stopped');
+				this.drainingConsumers.delete(queueUri);
+			} else {
+				this.logger.debug({ queueUri }, 'Consumer still draining');
+			}
+		}
+
+		// Log cleanup state periodically
+		if (this.drainingPools.size > 0 || this.drainingConsumers.size > 0) {
+			this.logger.debug(
+				{
+					drainingPools: this.drainingPools.size,
+					drainingConsumers: this.drainingConsumers.size,
+				},
+				'Resources still draining',
+			);
+		}
 	}
 
 	/**
@@ -217,6 +297,12 @@ export class QueueManagerService {
 	async stop(): Promise<void> {
 		this.logger.info('Stopping queue manager');
 		this.running = false;
+
+		// Stop cleanup interval
+		if (this.cleanupInterval) {
+			clearInterval(this.cleanupInterval);
+			this.cleanupInterval = null;
+		}
 
 		// Stop traffic manager (handles ALB deregistration)
 		const trafficResult = await this.traffic.stop();
@@ -376,9 +462,35 @@ export class QueueManagerService {
 	}
 
 	/**
-	 * Apply new configuration
+	 * Apply new configuration (with sync lock to prevent concurrent syncs)
+	 * Matches Java QueueManager.syncConfiguration() behavior
 	 */
 	private async applyConfiguration(config: MessageRouterConfig): Promise<void> {
+		// Acquire sync lock (wait for any in-progress sync to complete)
+		if (this.syncLock) {
+			this.logger.debug('Waiting for existing sync to complete');
+			await this.syncLock;
+		}
+
+		// Create lock promise that resolves when we're done
+		let releaseLock: () => void;
+		this.syncLock = new Promise((resolve) => {
+			releaseLock = resolve;
+		});
+
+		try {
+			await this.doApplyConfiguration(config);
+		} finally {
+			// Release lock
+			releaseLock!();
+			this.syncLock = null;
+		}
+	}
+
+	/**
+	 * Internal: Apply configuration (called with lock held)
+	 */
+	private async doApplyConfiguration(config: MessageRouterConfig): Promise<void> {
 		this.logger.info(
 			{
 				queues: config.queues.length,
@@ -438,34 +550,106 @@ export class QueueManagerService {
 	}
 
 	/**
-	 * Sync process pools with configuration
+	 * Sync process pools with configuration (matches Java QueueManager.syncConfiguration)
 	 */
 	private async syncProcessPools(poolConfigs: PoolConfig[]): Promise<void> {
-		const activePoolCodes = new Set(poolConfigs.map((p) => p.code));
+		const newPoolCodes = new Set(poolConfigs.map((p) => p.code));
+		const newPoolConfigs = new Map(poolConfigs.map((p) => [p.code, p]));
 
-		// Stop pools no longer in config
-		for (const [code, pool] of this.processPools) {
-			if (!activePoolCodes.has(code)) {
-				this.logger.info({ poolCode: code }, 'Stopping pool for removed config');
-				pool.drain();
-				await pool.shutdown();
+		// Step 1: Handle pool changes - update in-place or move to draining
+		for (const [code, existingPool] of this.processPools) {
+			const newConfig = newPoolConfigs.get(code);
+
+			if (!newConfig) {
+				// Pool removed from config - drain asynchronously (matches Java)
+				this.logger.info(
+					{
+						poolCode: code,
+						queueSize: existingPool.getStats().queueSize,
+						activeWorkers: existingPool.getStats().activeWorkers,
+					},
+					'Pool removed from config - draining asynchronously',
+				);
+				existingPool.drain();
 				this.processPools.delete(code);
+				this.drainingPools.set(code, existingPool);
+			} else {
+				// Pool exists in new config - check for changes
+				const stats = existingPool.getStats();
+				const concurrencyChanged = newConfig.concurrency !== stats.maxConcurrency;
+				const rateLimitChanged = newConfig.rateLimitPerMinute !== (stats.totalRateLimited > 0 ? stats.totalRateLimited : undefined);
+
+				if (concurrencyChanged || rateLimitChanged) {
+					this.logger.info(
+						{
+							poolCode: code,
+							oldConcurrency: stats.maxConcurrency,
+							newConcurrency: newConfig.concurrency,
+							rateLimitChanged,
+						},
+						'Updating pool configuration in-place',
+					);
+					existingPool.updateConfig(newConfig);
+				}
 			}
 		}
 
-		// Create or update pools
+		// Step 2: Create new pools (with limit checks)
 		for (const poolConfig of poolConfigs) {
-			const existingPool = this.processPools.get(poolConfig.code);
+			if (!this.processPools.has(poolConfig.code)) {
+				const currentPoolCount = this.processPools.size;
 
-			if (existingPool) {
-				// Update existing pool
-				existingPool.updateConfig(poolConfig);
-			} else {
-				// Create new pool
+				// Check pool limit
+				if (currentPoolCount >= this.maxPools) {
+					this.logger.error(
+						{
+							poolCode: poolConfig.code,
+							currentCount: currentPoolCount,
+							maxPools: this.maxPools,
+						},
+						'Cannot create pool: maximum pool limit reached',
+					);
+					this.warnings.add(
+						'POOL_LIMIT',
+						'CRITICAL',
+						`Max pool limit reached (${currentPoolCount}/${this.maxPools}) - cannot create pool [${poolConfig.code}]`,
+						'QueueManager',
+					);
+					continue;
+				}
+
+				// Warn if approaching limit
+				if (currentPoolCount >= this.poolWarningThreshold) {
+					this.logger.warn(
+						{
+							currentCount: currentPoolCount,
+							maxPools: this.maxPools,
+							threshold: this.poolWarningThreshold,
+						},
+						'Pool count approaching limit',
+					);
+					this.warnings.add(
+						'POOL_LIMIT',
+						'WARNING',
+						`Pool count ${currentPoolCount} approaching limit ${this.maxPools}`,
+						'QueueManager',
+					);
+				}
+
+				// Calculate queue capacity (matches Java)
+				const queueCapacity = Math.max(poolConfig.concurrency * 2, 50);
+
 				this.logger.info(
-					{ poolCode: poolConfig.code, concurrency: poolConfig.concurrency },
+					{
+						poolCode: poolConfig.code,
+						concurrency: poolConfig.concurrency,
+						queueCapacity,
+						poolNumber: currentPoolCount + 1,
+						maxPools: this.maxPools,
+					},
 					'Creating new process pool',
 				);
+
 				const pool = new ProcessPool(poolConfig, this.httpMediator, this.logger);
 				this.processPools.set(poolConfig.code, pool);
 			}
@@ -473,17 +657,21 @@ export class QueueManagerService {
 	}
 
 	/**
-	 * Sync SQS consumers with configuration
+	 * Sync SQS consumers with configuration (matches Java QueueManager pattern)
 	 */
 	private async syncSqsConsumers(config: MessageRouterConfig): Promise<void> {
 		const activeQueueUris = new Set(config.queues.map((q) => q.queueUri));
 
-		// Stop consumers for queues no longer in config
+		// Phase out consumers for queues no longer in config (async draining)
 		for (const [queueUri, consumer] of this.consumers) {
 			if (!activeQueueUris.has(queueUri)) {
-				this.logger.info({ queueUri }, 'Stopping consumer for removed queue');
-				await consumer.stop();
+				this.logger.info({ queueUri }, 'Phasing out consumer for removed queue');
+				// Stop consumer (sets running=false, initiates graceful shutdown)
+				consumer.stop();
+				// Move to draining for async cleanup
 				this.consumers.delete(queueUri);
+				this.drainingConsumers.set(queueUri, consumer);
+				this.logger.info({ queueUri }, 'Consumer moved to draining state');
 			}
 		}
 

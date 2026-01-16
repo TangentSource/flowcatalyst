@@ -203,6 +203,14 @@ export class SqsConsumer {
 	}
 
 	/**
+	 * Check if consumer is fully stopped (not running and no pending tasks)
+	 * Used by cleanup task to know when it's safe to remove from draining list
+	 */
+	isFullyStopped(): boolean {
+		return !this.running && this.pollingTasks.length === 0;
+	}
+
+	/**
 	 * Main polling loop
 	 */
 	private async pollLoop(connectionIndex: number): Promise<void> {
