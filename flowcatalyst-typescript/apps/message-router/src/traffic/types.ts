@@ -11,7 +11,7 @@ export interface TrafficConfig {
 	enabled: boolean;
 
 	/** Strategy name (e.g., 'AWS_ALB_DEREGISTRATION') */
-	strategyName?: string;
+	strategyName?: string | undefined;
 }
 
 /**

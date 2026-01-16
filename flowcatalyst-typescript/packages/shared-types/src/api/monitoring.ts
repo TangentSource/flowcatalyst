@@ -64,9 +64,11 @@ export type PoolStats = z.infer<typeof PoolStatsSchema>;
 export const WarningCategory = {
 	QUEUE_BACKLOG: 'QUEUE_BACKLOG',
 	QUEUE_GROWING: 'QUEUE_GROWING',
+	QUEUE_VALIDATION: 'QUEUE_VALIDATION',
 	MEDIATION: 'MEDIATION',
 	CONFIGURATION: 'CONFIGURATION',
 	POOL_LIMIT: 'POOL_LIMIT',
+	BROKER_HEALTH: 'BROKER_HEALTH',
 } as const;
 
 export type WarningCategory = (typeof WarningCategory)[keyof typeof WarningCategory];

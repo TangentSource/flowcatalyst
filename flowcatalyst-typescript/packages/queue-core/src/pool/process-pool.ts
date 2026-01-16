@@ -3,13 +3,11 @@ import type {
 	PoolConfig,
 	PoolState,
 	PoolStats,
-	ProcessingResult,
 	QueueMessage,
 } from '@flowcatalyst/shared-types';
 import pLimit from 'p-limit';
-import PQueue from 'p-queue';
+import { RateLimiterMemory } from 'rate-limiter-flexible';
 import type { HttpMediator } from '../mediation/http-mediator.js';
-import { createRateLimiter, type RateLimiter } from '../rate-limiter.js';
 import { MessageGroupHandler } from './message-group-handler.js';
 
 /**
@@ -31,8 +29,11 @@ export class ProcessPool {
 
 	private state: PoolState = 'STARTING';
 	private readonly messageGroups = new Map<string, MessageGroupHandler>();
-	private readonly concurrencyLimiter: ReturnType<typeof pLimit>;
-	private rateLimiter: RateLimiter | null;
+
+	// Concurrency control
+	private concurrencyLimiter: ReturnType<typeof pLimit>;
+	// Rate limiting
+	private rateLimiter: RateLimiterMemory | null;
 
 	// Statistics tracking
 	private totalProcessed = 0;
@@ -48,6 +49,7 @@ export class ProcessPool {
 
 	// Batch+group failure tracking for FIFO
 	private readonly failedBatchGroups = new Set<string>();
+	private readonly batchGroupMessageCount = new Map<string, number>();
 
 	// Capacity management
 	private queuedMessages = 0;
@@ -58,20 +60,27 @@ export class ProcessPool {
 		this.mediator = mediator;
 		this.logger = logger.child({ component: 'ProcessPool', poolCode: config.code });
 
-		// Concurrency limiter (semaphore pattern)
-		this.concurrencyLimiter = pLimit(config.concurrency);
-
-		// Rate limiter (optional)
-		this.rateLimiter =
-			config.rateLimitPerMinute && config.rateLimitPerMinute > 0
-				? createRateLimiter(config.rateLimitPerMinute)
-				: null;
-
 		// Capacity = max(concurrency * 2, 50)
 		this.maxCapacity = Math.max(config.concurrency * 2, 50);
 
+		// Initialize concurrency limiter
+		this.concurrencyLimiter = pLimit(config.concurrency);
+
+		// Initialize rate limiter
+		if (config.rateLimitPerMinute && config.rateLimitPerMinute > 0) {
+			this.rateLimiter = new RateLimiterMemory({
+				points: config.rateLimitPerMinute,
+				duration: 60, // Per minute
+			});
+		} else {
+			this.rateLimiter = null;
+		}
+
 		this.state = 'RUNNING';
-		this.logger.info({ concurrency: config.concurrency, capacity: this.maxCapacity }, 'Pool started');
+		this.logger.info(
+			{ concurrency: config.concurrency, capacity: this.maxCapacity },
+			'Pool started',
+		);
 	}
 
 	/**
@@ -87,6 +96,7 @@ export class ProcessPool {
 			return false;
 		}
 
+		// Check capacity (Backpressure)
 		if (this.queuedMessages >= this.maxCapacity) {
 			this.logger.warn(
 				{ queued: this.queuedMessages, capacity: this.maxCapacity },
@@ -96,6 +106,11 @@ export class ProcessPool {
 		}
 
 		this.queuedMessages++;
+
+		// Track batch+group count
+		const batchGroupKey = `${message.batchId}|${message.pointer.messageGroupId}`;
+		const currentCount = this.batchGroupMessageCount.get(batchGroupKey) || 0;
+		this.batchGroupMessageCount.set(batchGroupKey, currentCount + 1);
 
 		// Get or create message group handler
 		let groupHandler = this.messageGroups.get(message.pointer.messageGroupId);
@@ -127,7 +142,6 @@ export class ProcessPool {
 		message: QueueMessage,
 		callback: MessageCallback,
 	): Promise<void> {
-		const startTime = Date.now();
 		const batchGroupKey = `${message.batchId}|${message.pointer.messageGroupId}`;
 
 		// Check if batch+group already failed (FIFO preservation)
@@ -136,24 +150,37 @@ export class ProcessPool {
 				{ messageId: message.messageId, batchGroupKey },
 				'Skipping message due to batch+group failure',
 			);
-			await callback.nack();
+			await callback.nack(); // Default visibility
+			this.decrementBatchGroupCount(batchGroupKey);
 			this.queuedMessages--;
 			return;
 		}
 
-		// Wait for rate limit if configured
+		// Step 1: Rate Limiting (Wait logic)
 		if (this.rateLimiter) {
-			const waited = await this.rateLimiter.acquire();
-			if (waited) {
+			try {
+				await this.rateLimiter.consume(1);
+			} catch (rej) {
+				// Rate limited
 				this.totalRateLimited++;
 				this.stats5min.rateLimited++;
 				this.stats30min.rateLimited++;
+
+				const msBeforeNext = (rej as { msBeforeNext: number }).msBeforeNext;
+				// Wait in "Heap" (non-blocking for concurrency limiter)
+				await new Promise((resolve) => setTimeout(resolve, msBeforeNext));
+				// After waking up, we technically should try consuming again or just proceed
+				// rate-limiter-flexible strict mode would require retry, but for a simple
+				// smooth-out, proceeding is usually acceptable if we trust the wait time.
+				// For strict enforcement, we'd loop, but that risks infinite loops.
+				// Given msBeforeNext is precise, we proceed.
 			}
 		}
 
-		// Acquire concurrency permit
+		// Step 2: Concurrency Control (Work logic)
 		await this.concurrencyLimiter(async () => {
 			try {
+				const startTime = Date.now();
 				const result = await this.mediator.process(message);
 				const durationMs = Date.now() - startTime;
 
@@ -168,6 +195,7 @@ export class ProcessPool {
 						this.stats5min.succeeded++;
 						this.stats30min.succeeded++;
 						await callback.ack();
+						this.decrementBatchGroupCount(batchGroupKey);
 						break;
 
 					case 'ERROR_CONFIG':
@@ -176,32 +204,40 @@ export class ProcessPool {
 						this.stats5min.failed++;
 						this.stats30min.failed++;
 						await callback.ack();
+						this.decrementBatchGroupCount(batchGroupKey);
 						break;
 
 					case 'DEFERRED':
 						// Message not ready - nack with visibility
 						this.totalDeferred++;
-						await callback.nack(30); // 30 second visibility
+						await callback.nack(result.delaySeconds || 30);
+						this.decrementBatchGroupCount(batchGroupKey);
 						break;
 
 					case 'ERROR_PROCESS':
 					case 'BATCH_FAILED':
+					case 'ERROR_CONNECTION':
 					default:
 						// 5xx or timeout - nack for retry, mark batch+group as failed
 						this.totalFailed++;
 						this.stats5min.failed++;
 						this.stats30min.failed++;
 						this.failedBatchGroups.add(batchGroupKey);
-						await callback.nack();
+						await callback.nack(30); // 30s visibility for errors
+						this.decrementBatchGroupCount(batchGroupKey);
 						break;
 				}
 			} catch (error) {
-				this.logger.error({ err: error, messageId: message.messageId }, 'Processing error');
+				this.logger.error(
+					{ err: error, messageId: message.messageId },
+					'Processing error',
+				);
 				this.totalFailed++;
 				this.stats5min.failed++;
 				this.stats30min.failed++;
 				this.failedBatchGroups.add(batchGroupKey);
-				await callback.nack();
+				await callback.nack(30);
+				this.decrementBatchGroupCount(batchGroupKey);
 			} finally {
 				this.queuedMessages--;
 			}
@@ -209,10 +245,26 @@ export class ProcessPool {
 	}
 
 	/**
-	 * Get pool statistics - matches Java PoolStats exactly
+	 * Decrement batch group count and cleanup if zero
+	 */
+	private decrementBatchGroupCount(key: string): void {
+		const current = this.batchGroupMessageCount.get(key);
+		if (current !== undefined) {
+			const next = current - 1;
+			if (next <= 0) {
+				this.batchGroupMessageCount.delete(key);
+				this.failedBatchGroups.delete(key);
+			} else {
+				this.batchGroupMessageCount.set(key, next);
+			}
+		}
+	}
+
+	/**
+	 * Get pool statistics
 	 */
 	getStats(): PoolStats {
-		const activeWorkers = this.config.concurrency - this.concurrencyLimiter.activeCount;
+		const activeWorkers = this.concurrencyLimiter.activeCount;
 		const successRate =
 			this.totalProcessed > 0 ? this.totalSucceeded / this.totalProcessed : 1.0;
 
@@ -223,8 +275,8 @@ export class ProcessPool {
 			totalFailed: this.totalFailed,
 			totalRateLimited: this.totalRateLimited,
 			successRate,
-			activeWorkers: this.concurrencyLimiter.activeCount,
-			availablePermits: this.concurrencyLimiter.pendingCount,
+			activeWorkers,
+			availablePermits: this.config.concurrency - activeWorkers,
 			maxConcurrency: this.config.concurrency,
 			queueSize: this.queuedMessages,
 			maxQueueCapacity: this.maxCapacity,
@@ -249,17 +301,33 @@ export class ProcessPool {
 	}
 
 	/**
-	 * Update pool configuration in-place (concurrency, rate limit)
+	 * Update pool configuration in-place
 	 */
 	updateConfig(newConfig: Partial<PoolConfig>): void {
 		if (newConfig.rateLimitPerMinute !== undefined) {
 			const rateLimit = newConfig.rateLimitPerMinute;
-			this.rateLimiter =
-				rateLimit !== null && rateLimit > 0 ? createRateLimiter(rateLimit) : null;
-			this.logger.info({ rateLimitPerMinute: rateLimit }, 'Rate limit updated');
+			if (rateLimit && rateLimit > 0) {
+				this.rateLimiter = new RateLimiterMemory({
+					points: rateLimit,
+					duration: 60,
+				});
+				this.logger.info({ rateLimitPerMinute: rateLimit }, 'Rate limit updated');
+			} else {
+				this.rateLimiter = null;
+				this.logger.info('Rate limit disabled');
+			}
 		}
-		// Note: p-limit doesn't support dynamic concurrency changes
-		// Would need to recreate the limiter for concurrency changes
+
+		if (newConfig.concurrency !== undefined) {
+			// p-limit cannot update concurrency dynamically.
+			// We create a new limiter for future tasks.
+			// Existing tasks in the old queue will finish there.
+			this.concurrencyLimiter = pLimit(newConfig.concurrency);
+			this.logger.info(
+				{ concurrency: newConfig.concurrency },
+				'Concurrency updated (applies to new tasks)',
+			);
+		}
 	}
 
 	/**
@@ -274,7 +342,11 @@ export class ProcessPool {
 	 * Check if pool is fully drained
 	 */
 	isDrained(): boolean {
-		return this.state === 'DRAINING' && this.queuedMessages === 0;
+		return (
+			this.state === 'DRAINING' &&
+			this.queuedMessages === 0 &&
+			this.concurrencyLimiter.activeCount === 0
+		);
 	}
 
 	/**
@@ -284,6 +356,7 @@ export class ProcessPool {
 		this.state = 'STOPPED';
 		this.messageGroups.clear();
 		this.failedBatchGroups.clear();
+		this.batchGroupMessageCount.clear();
 		this.logger.info('Pool shutdown complete');
 	}
 

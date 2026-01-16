@@ -365,6 +365,17 @@ const resetCircuitBreakerRoute = createRoute({
 				},
 			},
 		},
+		500: {
+			description: 'Circuit breaker not found',
+			content: {
+				'application/json': {
+					schema: z.object({
+						status: z.string(),
+						message: z.string().optional(),
+					}),
+				},
+			},
+		},
 	},
 });
 
@@ -459,8 +470,23 @@ const standbyStatusRoute = createRoute({
 });
 
 monitoringRoutes.openapi(standbyStatusRoute, (c) => {
-	// Standby mode not implemented yet
-	return c.json({ standbyEnabled: false });
+	const services = c.get('services');
+	const stats = services.traffic.getStats();
+
+	// Discriminated union based on standbyEnabled
+	if (!stats.enabled) {
+		return c.json({ standbyEnabled: false as const });
+	}
+
+	return c.json({
+		standbyEnabled: true as const,
+		instanceId: process.env['INSTANCE_ID'] || 'unknown',
+		role: stats.mode === 'PRIMARY' ? 'PRIMARY' : 'STANDBY',
+		redisAvailable: false, // No Redis in TypeScript version
+		currentLockHolder: '',
+		lastSuccessfulRefresh: null,
+		hasWarning: false,
+	});
 });
 
 /**
@@ -484,8 +510,109 @@ const trafficStatusRoute = createRoute({
 });
 
 monitoringRoutes.openapi(trafficStatusRoute, (c) => {
-	// Traffic management not implemented yet
-	return c.json({ enabled: false, message: 'Traffic management not available' });
+	const services = c.get('services');
+	const stats = services.traffic.getStats();
+
+	// Discriminated union based on enabled
+	if (!stats.enabled) {
+		return c.json({
+			enabled: false as const,
+			message: 'Traffic management not enabled',
+		});
+	}
+
+	return c.json({
+		enabled: true as const,
+		strategyType: stats.strategyName,
+		registered: stats.isRegistered,
+		targetInfo: stats.mode,
+		lastOperation: '',
+		lastError: '',
+	});
+});
+
+/**
+ * POST /monitoring/become-primary - Switch to PRIMARY mode
+ */
+const becomePrimaryRoute = createRoute({
+	method: 'post',
+	path: '/become-primary',
+	tags: ['Monitoring'],
+	summary: 'Switch to PRIMARY mode',
+	description: 'Transitions this instance to PRIMARY mode, resuming message processing and registering with load balancer',
+	responses: {
+		200: {
+			description: 'Switched to PRIMARY mode',
+			content: {
+				'application/json': {
+					schema: StatusResponseSchema,
+				},
+			},
+		},
+		500: {
+			description: 'Failed to switch mode',
+			content: {
+				'application/json': {
+					schema: z.object({
+						status: z.string(),
+						message: z.string().optional(),
+					}),
+				},
+			},
+		},
+	},
+});
+
+monitoringRoutes.openapi(becomePrimaryRoute, async (c) => {
+	const services = c.get('services');
+	const result = await services.traffic.becomePrimary();
+
+	return result.match(
+		() => c.json({ status: 'success', mode: 'PRIMARY' }),
+		(error) => c.json({ status: 'error', message: `Failed to become primary: ${error.type}` }, 500),
+	);
+});
+
+/**
+ * POST /monitoring/become-standby - Switch to STANDBY mode
+ */
+const becomeStandbyRoute = createRoute({
+	method: 'post',
+	path: '/become-standby',
+	tags: ['Monitoring'],
+	summary: 'Switch to STANDBY mode',
+	description: 'Transitions this instance to STANDBY mode, pausing message processing and deregistering from load balancer',
+	responses: {
+		200: {
+			description: 'Switched to STANDBY mode',
+			content: {
+				'application/json': {
+					schema: StatusResponseSchema,
+				},
+			},
+		},
+		500: {
+			description: 'Failed to switch mode',
+			content: {
+				'application/json': {
+					schema: z.object({
+						status: z.string(),
+						message: z.string().optional(),
+					}),
+				},
+			},
+		},
+	},
+});
+
+monitoringRoutes.openapi(becomeStandbyRoute, async (c) => {
+	const services = c.get('services');
+	const result = await services.traffic.becomeStandby();
+
+	return result.match(
+		() => c.json({ status: 'success', mode: 'STANDBY' }),
+		(error) => c.json({ status: 'error', message: `Failed to become standby: ${error.type}` }, 500),
+	);
 });
 
 /**
@@ -553,4 +680,185 @@ monitoringRoutes.openapi(dashboardRoute, async (c) => {
 	} catch {
 		return c.text('Dashboard not found', 404);
 	}
+});
+
+/**
+ * OIDC Diagnostics response schema
+ */
+const OidcDiagnosticsResponseSchema = z.object({
+	authenticationEnabled: z.boolean(),
+	authenticationMode: z.enum(['NONE', 'BASIC', 'OIDC']),
+	oidcConfigured: z.boolean(),
+	issuerUrl: z.string().nullable(),
+	clientId: z.string().nullable(),
+	audience: z.string().nullable(),
+	discoveryEndpoint: z.string().nullable(),
+	jwksUri: z.string().nullable(),
+	discoveryStatus: z.enum(['OK', 'ERROR', 'NOT_CONFIGURED']),
+	discoveryError: z.string().nullable(),
+});
+
+/**
+ * GET /monitoring/oidc-diagnostics - OIDC configuration diagnostics
+ */
+const oidcDiagnosticsRoute = createRoute({
+	method: 'get',
+	path: '/oidc-diagnostics',
+	tags: ['Monitoring'],
+	summary: 'Get OIDC diagnostics',
+	description: 'Returns OIDC configuration and connectivity status',
+	responses: {
+		200: {
+			description: 'OIDC diagnostics',
+			content: {
+				'application/json': {
+					schema: OidcDiagnosticsResponseSchema,
+				},
+			},
+		},
+	},
+});
+
+monitoringRoutes.openapi(oidcDiagnosticsRoute, async (c) => {
+	const logger = c.get('logger');
+
+	// Get OIDC config from environment
+	const authEnabled = process.env['AUTHENTICATION_ENABLED'] === 'true';
+	const authMode = (process.env['AUTHENTICATION_MODE'] || 'NONE') as 'NONE' | 'BASIC' | 'OIDC';
+	const issuerUrl = process.env['OIDC_ISSUER_URL'] || null;
+	const clientId = process.env['OIDC_CLIENT_ID'] || null;
+	const audience = process.env['OIDC_AUDIENCE'] || clientId;
+
+	const oidcConfigured = authEnabled && authMode === 'OIDC' && !!issuerUrl;
+	const discoveryEndpoint = issuerUrl
+		? `${issuerUrl.endsWith('/') ? issuerUrl : issuerUrl + '/'}/.well-known/openid-configuration`
+		: null;
+
+	let jwksUri: string | null = null;
+	let discoveryStatus: 'OK' | 'ERROR' | 'NOT_CONFIGURED' = 'NOT_CONFIGURED';
+	let discoveryError: string | null = null;
+
+	// If OIDC is configured, try to fetch discovery document
+	if (oidcConfigured && issuerUrl) {
+		try {
+			const wellKnownUrl = issuerUrl.endsWith('/')
+				? `${issuerUrl}.well-known/openid-configuration`
+				: `${issuerUrl}/.well-known/openid-configuration`;
+
+			const response = await fetch(wellKnownUrl, { signal: AbortSignal.timeout(5000) });
+
+			if (response.ok) {
+				const discovery = (await response.json()) as { jwks_uri?: string };
+				jwksUri = discovery.jwks_uri || null;
+				discoveryStatus = 'OK';
+			} else {
+				discoveryStatus = 'ERROR';
+				discoveryError = `HTTP ${response.status}: ${response.statusText}`;
+			}
+		} catch (error) {
+			discoveryStatus = 'ERROR';
+			discoveryError = error instanceof Error ? error.message : 'Unknown error';
+			logger.warn({ err: error, issuerUrl }, 'OIDC discovery check failed');
+		}
+	}
+
+	return c.json({
+		authenticationEnabled: authEnabled,
+		authenticationMode: authMode,
+		oidcConfigured,
+		issuerUrl,
+		clientId,
+		audience,
+		discoveryEndpoint,
+		jwksUri,
+		discoveryStatus,
+		discoveryError,
+	});
+});
+
+/**
+ * Infrastructure health response schema
+ */
+const InfrastructureHealthResponseSchema = z.object({
+	healthy: z.boolean(),
+	checks: z.array(
+		z.object({
+			name: z.string(),
+			healthy: z.boolean(),
+			message: z.string(),
+		}),
+	),
+	timestamp: z.string(),
+});
+
+/**
+ * GET /monitoring/infrastructure-health - Infrastructure health check
+ */
+const infrastructureHealthRoute = createRoute({
+	method: 'get',
+	path: '/infrastructure-health',
+	tags: ['Monitoring'],
+	summary: 'Get infrastructure health',
+	description: 'Checks pools exist and are not stalled (no activity for extended period)',
+	responses: {
+		200: {
+			description: 'Infrastructure health status',
+			content: {
+				'application/json': {
+					schema: InfrastructureHealthResponseSchema,
+				},
+			},
+		},
+	},
+});
+
+monitoringRoutes.openapi(infrastructureHealthRoute, (c) => {
+	const services = c.get('services');
+	const poolStats = services.queueManager.getPoolStats();
+	const checks: Array<{ name: string; healthy: boolean; message: string }> = [];
+
+	// Check: Pools exist
+	const poolCount = Object.keys(poolStats).length;
+	checks.push({
+		name: 'pools_exist',
+		healthy: poolCount > 0,
+		message: poolCount > 0 ? `${poolCount} pools configured` : 'No pools configured',
+	});
+
+	// Check: Pools are active (have processed messages or are idle)
+	// A stalled pool is one that has queued messages but no active workers
+	const stalledPools: string[] = [];
+
+	for (const [poolCode, stats] of Object.entries(poolStats)) {
+		// Check for stalled condition: has queued messages but no active workers processing them
+		if (stats.queueSize > 0 && stats.activeWorkers === 0) {
+			stalledPools.push(poolCode);
+		}
+	}
+
+	checks.push({
+		name: 'pools_active',
+		healthy: stalledPools.length === 0,
+		message:
+			stalledPools.length === 0
+				? 'All pools are active'
+				: `Stalled pools (have queued messages but no active workers): ${stalledPools.join(', ')}`,
+	});
+
+	// Check: Queue manager is running
+	const queueManagerRunning = services.queueManager.isRunning();
+	checks.push({
+		name: 'queue_manager_running',
+		healthy: queueManagerRunning,
+		message: queueManagerRunning ? 'Queue manager is running' : 'Queue manager is not running',
+	});
+
+	// Overall health
+	const healthy = checks.every((check) => check.healthy);
+
+	return c.json({
+		healthy,
+		checks,
+		timestamp: new Date().toISOString(),
+	});
 });

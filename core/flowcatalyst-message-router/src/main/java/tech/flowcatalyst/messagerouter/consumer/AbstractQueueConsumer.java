@@ -11,6 +11,7 @@ import tech.flowcatalyst.messagerouter.model.MessagePointer;
 import tech.flowcatalyst.messagerouter.warning.WarningService;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -88,10 +89,10 @@ public abstract class AbstractQueueConsumer implements QueueConsumer {
                 rawMessages.size(), queueId, instanceId);
         }
 
-        List<QueueManager.BatchMessage> batchMessages = new ArrayList<>();
+        var batchMessages = new ArrayList<QueueManager.BatchMessage>();
 
         // Track message IDs seen in this batch to dedupe duplicates
-        java.util.Set<String> seenMessageIds = new java.util.HashSet<>();
+        var seenMessageIds = new HashSet<String>();
 
         // Parse all messages and build batch
         for (RawMessage raw : rawMessages) {

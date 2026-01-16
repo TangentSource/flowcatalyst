@@ -221,7 +221,7 @@ export class SqsConsumer {
 					MaxNumberOfMessages: this.config.maxMessages,
 					WaitTimeSeconds: this.config.waitTimeSeconds,
 					VisibilityTimeout: this.config.visibilityTimeout,
-					AttributeNames: ['ApproximateReceiveCount', 'MessageGroupId'],
+					MessageSystemAttributeNames: ['ApproximateReceiveCount', 'MessageGroupId'],
 					MessageAttributeNames: ['All'],
 				});
 

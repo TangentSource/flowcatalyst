@@ -9,16 +9,19 @@ export interface OidcConfig {
 	/** OIDC issuer URL (e.g., https://keycloak.example.com/realms/myrealm) */
 	issuerUrl: string;
 	/** Expected audience (usually client ID) */
-	audience?: string;
+	audience?: string | undefined;
 	/** Client ID for additional validation */
-	clientId?: string;
+	clientId?: string | undefined;
 }
+
+/** JWKS getter function type */
+type JwksGetter = ReturnType<typeof jose.createRemoteJWKSet>;
 
 /**
  * JWKS cache entry
  */
 interface JwksCache {
-	jwks: jose.JWKSetStore;
+	jwks: JwksGetter;
 	expiresAt: number;
 }
 
@@ -29,7 +32,7 @@ const JWKS_CACHE_TTL_MS = 5 * 60 * 1000;
 /**
  * Get or create JWKS for issuer
  */
-async function getJwks(issuerUrl: string): Promise<jose.JWKSetStore> {
+async function getJwks(issuerUrl: string): Promise<JwksGetter> {
 	const cached = jwksCache.get(issuerUrl);
 	const now = Date.now();
 
@@ -129,7 +132,7 @@ export function createOidcMiddleware(
 
 			// Additional client ID validation if configured
 			if (config.clientId) {
-				const azp = payload.azp as string | undefined;
+				const azp = payload['azp'] as string | undefined;
 				const aud = payload.aud;
 				const hasValidClientId =
 					azp === config.clientId ||
@@ -155,10 +158,11 @@ export function createOidcMiddleware(
 			// Extract user info from token
 			const user = {
 				sub: payload.sub,
-				username: (payload.preferred_username as string) || (payload.email as string) || payload.sub,
-				email: payload.email as string | undefined,
-				name: payload.name as string | undefined,
-				roles: (payload.realm_access as { roles?: string[] })?.roles || [],
+				username:
+					(payload['preferred_username'] as string) || (payload['email'] as string) || payload.sub,
+				email: payload['email'] as string | undefined,
+				name: payload['name'] as string | undefined,
+				roles: (payload['realm_access'] as { roles?: string[] })?.roles || [],
 				authMode: 'OIDC' as const,
 			};
 

@@ -14,7 +14,12 @@ public class Client {
 
     public String name;
 
-    public String identifier; // Unique client slug/code
+    /**
+     * Unique client identifier/slug.
+     * Max 60 characters, lowercase, may include hyphens and underscores.
+     * Example: "acme-corp", "flowcatalyst_demo"
+     */
+    public String identifier;
 
     public ClientStatus status = ClientStatus.ACTIVE;
 

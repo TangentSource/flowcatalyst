@@ -38,6 +38,9 @@ import tech.flowcatalyst.platform.client.ClientRepository;
 import tech.flowcatalyst.platform.common.ExecutionContext;
 import tech.flowcatalyst.platform.common.Result;
 import tech.flowcatalyst.platform.common.errors.UseCaseError;
+import tech.flowcatalyst.platform.shared.EntityType;
+import tech.flowcatalyst.platform.shared.TypedId;
+import tech.flowcatalyst.platform.shared.TypedIdParam;
 
 import java.util.List;
 import java.util.Map;
@@ -125,7 +128,8 @@ public class ApplicationAdminResource {
     @GET
     @Path("/{id}")
     @Operation(summary = "Get application by ID")
-    public Response getApplication(@PathParam("id") String id) {
+    public Response getApplication(
+            @TypedIdParam(EntityType.APPLICATION) @PathParam("id") String id) {
         return applicationService.findById(id)
             .map(app -> Response.ok(toApplicationDetailResponse(app)).build())
             .orElse(Response.status(Response.Status.NOT_FOUND)
@@ -192,10 +196,10 @@ public class ApplicationAdminResource {
                     app = applicationRepo.findByIdOptional(s.value().applicationId()).orElse(app);
                     var response = toApplicationDetailResponse(app);
                     response.put("serviceAccount", Map.of(
-                        "principalId", provisionResult.principal().id,
+                        "principalId", TypedId.Ops.serialize(EntityType.PRINCIPAL, provisionResult.principal().id),
                         "name", provisionResult.principal().name,
                         "oauthClient", Map.of(
-                            "id", provisionResult.oauthClient().id,
+                            "id", TypedId.Ops.serialize(EntityType.OAUTH_CLIENT, provisionResult.oauthClient().id),
                             "clientId", provisionResult.oauthClient().clientId,
                             "clientSecret", provisionResult.clientSecret()  // Only available at creation time!
                         )
@@ -224,7 +228,9 @@ public class ApplicationAdminResource {
     @PUT
     @Path("/{id}")
     @Operation(summary = "Update an application")
-    public Response updateApplication(@PathParam("id") String id, UpdateApplicationRequest request) {
+    public Response updateApplication(
+            @TypedIdParam(EntityType.APPLICATION) @PathParam("id") String id,
+            UpdateApplicationRequest request) {
         String principalId = auditContext.requirePrincipalId();
         ExecutionContext ctx = ExecutionContext.create(principalId);
         var command = new UpdateApplicationCommand(
@@ -262,7 +268,8 @@ public class ApplicationAdminResource {
     @Path("/{id}")
     @Operation(summary = "Delete an application",
         description = "Permanently deletes an application. The application must be deactivated first.")
-    public Response deleteApplication(@PathParam("id") String id) {
+    public Response deleteApplication(
+            @TypedIdParam(EntityType.APPLICATION) @PathParam("id") String id) {
         String principalId = auditContext.requirePrincipalId();
         ExecutionContext ctx = ExecutionContext.create(principalId);
         var command = new DeleteApplicationCommand(id);
@@ -287,7 +294,8 @@ public class ApplicationAdminResource {
     @POST
     @Path("/{id}/activate")
     @Operation(summary = "Activate an application")
-    public Response activateApplication(@PathParam("id") String id) {
+    public Response activateApplication(
+            @TypedIdParam(EntityType.APPLICATION) @PathParam("id") String id) {
         String principalId = auditContext.requirePrincipalId();
         ExecutionContext ctx = ExecutionContext.create(principalId);
         var command = new ActivateApplicationCommand(id);
@@ -312,7 +320,8 @@ public class ApplicationAdminResource {
     @POST
     @Path("/{id}/deactivate")
     @Operation(summary = "Deactivate an application")
-    public Response deactivateApplication(@PathParam("id") String id) {
+    public Response deactivateApplication(
+            @TypedIdParam(EntityType.APPLICATION) @PathParam("id") String id) {
         String principalId = auditContext.requirePrincipalId();
         ExecutionContext ctx = ExecutionContext.create(principalId);
         var command = new DeactivateApplicationCommand(id);
@@ -339,7 +348,8 @@ public class ApplicationAdminResource {
     @Operation(summary = "Provision a service account for an existing application",
         description = "Creates a service account and OAuth client for an application that doesn't have one. " +
             "The client secret is only returned once and cannot be retrieved later.")
-    public Response provisionServiceAccount(@PathParam("id") String id) {
+    public Response provisionServiceAccount(
+            @TypedIdParam(EntityType.APPLICATION) @PathParam("id") String id) {
         String principalId = auditContext.requirePrincipalId();
         ExecutionContext ctx = ExecutionContext.create(principalId);
         var command = new ProvisionServiceAccountCommand(id);
@@ -349,10 +359,10 @@ public class ApplicationAdminResource {
             return Response.ok(Map.of(
                 "message", "Service account provisioned",
                 "serviceAccount", Map.of(
-                    "principalId", provisionResult.principal().id,
+                    "principalId", TypedId.Ops.serialize(EntityType.PRINCIPAL, provisionResult.principal().id),
                     "name", provisionResult.principal().name,
                     "oauthClient", Map.of(
-                        "id", provisionResult.oauthClient().id,
+                        "id", TypedId.Ops.serialize(EntityType.OAUTH_CLIENT, provisionResult.oauthClient().id),
                         "clientId", provisionResult.oauthClient().clientId,
                         "clientSecret", provisionResult.clientSecret()  // Only available now!
                     )
@@ -378,7 +388,8 @@ public class ApplicationAdminResource {
     @GET
     @Path("/{id}/clients")
     @Operation(summary = "Get client configurations for an application")
-    public Response getClientConfigs(@PathParam("id") String id) {
+    public Response getClientConfigs(
+            @TypedIdParam(EntityType.APPLICATION) @PathParam("id") String id) {
         if (applicationService.findById(id).isEmpty()) {
             return Response.status(Response.Status.NOT_FOUND)
                 .entity(Map.of("error", "Application not found"))
@@ -398,8 +409,8 @@ public class ApplicationAdminResource {
     @Path("/{id}/clients/{clientId}")
     @Operation(summary = "Configure application for a specific client")
     public Response configureClient(
-            @PathParam("id") String applicationId,
-            @PathParam("clientId") String clientId,
+            @TypedIdParam(EntityType.APPLICATION) @PathParam("id") String applicationId,
+            @TypedIdParam(EntityType.CLIENT) @PathParam("clientId") String clientId,
             ClientConfigRequest request) {
 
         String principalId = auditContext.requirePrincipalId();
@@ -422,9 +433,9 @@ public class ApplicationAdminResource {
                     // Build response from event data to avoid transaction visibility issues
                     var event = s.value();
                     var response = new java.util.HashMap<String, Object>();
-                    response.put("id", event.configId());
-                    response.put("applicationId", event.applicationId());
-                    response.put("clientId", event.clientId());
+                    response.put("id", TypedId.Ops.serialize(EntityType.APP_CLIENT_CONFIG, event.configId()));
+                    response.put("applicationId", TypedId.Ops.serialize(EntityType.APPLICATION, event.applicationId()));
+                    response.put("clientId", TypedId.Ops.serialize(EntityType.CLIENT, event.clientId()));
                     response.put("clientName", event.clientName());
                     response.put("clientIdentifier", event.clientIdentifier());
                     response.put("enabled", true);
@@ -463,9 +474,9 @@ public class ApplicationAdminResource {
                     // Build response from event data to avoid transaction visibility issues
                     var event = s.value();
                     var response = new java.util.HashMap<String, Object>();
-                    response.put("id", event.configId());
-                    response.put("applicationId", event.applicationId());
-                    response.put("clientId", event.clientId());
+                    response.put("id", TypedId.Ops.serialize(EntityType.APP_CLIENT_CONFIG, event.configId()));
+                    response.put("applicationId", TypedId.Ops.serialize(EntityType.APPLICATION, event.applicationId()));
+                    response.put("clientId", TypedId.Ops.serialize(EntityType.CLIENT, event.clientId()));
                     response.put("clientName", event.clientName());
                     response.put("clientIdentifier", event.clientIdentifier());
                     response.put("enabled", false);
@@ -496,8 +507,8 @@ public class ApplicationAdminResource {
     @Path("/{id}/clients/{clientId}/enable")
     @Operation(summary = "Enable application for a client")
     public Response enableForClient(
-            @PathParam("id") String applicationId,
-            @PathParam("clientId") String clientId) {
+            @TypedIdParam(EntityType.APPLICATION) @PathParam("id") String applicationId,
+            @TypedIdParam(EntityType.CLIENT) @PathParam("clientId") String clientId) {
 
         String principalId = auditContext.requirePrincipalId();
         ExecutionContext ctx = ExecutionContext.create(principalId);
@@ -524,8 +535,8 @@ public class ApplicationAdminResource {
     @Path("/{id}/clients/{clientId}/disable")
     @Operation(summary = "Disable application for a client")
     public Response disableForClient(
-            @PathParam("id") String applicationId,
-            @PathParam("clientId") String clientId) {
+            @TypedIdParam(EntityType.APPLICATION) @PathParam("id") String applicationId,
+            @TypedIdParam(EntityType.CLIENT) @PathParam("clientId") String clientId) {
 
         String principalId = auditContext.requirePrincipalId();
         ExecutionContext ctx = ExecutionContext.create(principalId);
@@ -555,7 +566,8 @@ public class ApplicationAdminResource {
     @GET
     @Path("/{id}/roles")
     @Operation(summary = "Get all roles defined for this application")
-    public Response getApplicationRoles(@PathParam("id") String id) {
+    public Response getApplicationRoles(
+            @TypedIdParam(EntityType.APPLICATION) @PathParam("id") String id) {
         return applicationService.findById(id)
             .map(app -> {
                 var roles = PermissionRegistry.extractApplicationCodes(List.of(app.code));
@@ -606,7 +618,7 @@ public class ApplicationAdminResource {
 
     private Map<String, Object> toApplicationResponse(Application app) {
         var result = new java.util.HashMap<String, Object>();
-        result.put("id", app.id);
+        result.put("id", TypedId.Ops.serialize(EntityType.APPLICATION, app.id));
         result.put("type", app.type != null ? app.type.name() : "APPLICATION");
         result.put("code", app.code);
         result.put("name", app.name);
@@ -616,7 +628,7 @@ public class ApplicationAdminResource {
         result.put("website", app.website);
         result.put("logoMimeType", app.logoMimeType);
         result.put("serviceAccountId", app.serviceAccountId);
-        result.put("serviceAccountPrincipalId", app.serviceAccountPrincipalId);
+        result.put("serviceAccountPrincipalId", TypedId.Ops.serialize(EntityType.PRINCIPAL, app.serviceAccountPrincipalId));
         result.put("active", app.active);
         result.put("createdAt", app.createdAt);
         result.put("updatedAt", app.updatedAt);
@@ -625,7 +637,7 @@ public class ApplicationAdminResource {
 
     private Map<String, Object> toApplicationDetailResponse(Application app) {
         var result = new java.util.HashMap<String, Object>();
-        result.put("id", app.id);
+        result.put("id", TypedId.Ops.serialize(EntityType.APPLICATION, app.id));
         result.put("type", app.type != null ? app.type.name() : "APPLICATION");
         result.put("code", app.code);
         result.put("name", app.name);
@@ -636,7 +648,7 @@ public class ApplicationAdminResource {
         result.put("logoMimeType", app.logoMimeType);
         result.put("defaultBaseUrl", app.defaultBaseUrl);
         result.put("serviceAccountId", app.serviceAccountId);
-        result.put("serviceAccountPrincipalId", app.serviceAccountPrincipalId);
+        result.put("serviceAccountPrincipalId", TypedId.Ops.serialize(EntityType.PRINCIPAL, app.serviceAccountPrincipalId));
         result.put("active", app.active);
         result.put("createdAt", app.createdAt);
         result.put("updatedAt", app.updatedAt);
@@ -645,9 +657,9 @@ public class ApplicationAdminResource {
 
     private Map<String, Object> toClientConfigResponse(ApplicationClientConfig config) {
         var result = new java.util.HashMap<String, Object>();
-        result.put("id", config.id);
-        result.put("applicationId", config.applicationId);
-        result.put("clientId", config.clientId);
+        result.put("id", TypedId.Ops.serialize(EntityType.APP_CLIENT_CONFIG, config.id));
+        result.put("applicationId", TypedId.Ops.serialize(EntityType.APPLICATION, config.applicationId));
+        result.put("clientId", TypedId.Ops.serialize(EntityType.CLIENT, config.clientId));
 
         // Look up client details
         Client client = clientRepo.findByIdOptional(config.clientId).orElse(null);

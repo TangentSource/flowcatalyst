@@ -23,6 +23,8 @@ import tech.flowcatalyst.platform.client.AuthConfigType;
 import tech.flowcatalyst.platform.client.ClientAuthConfig;
 import tech.flowcatalyst.platform.client.ClientAuthConfigService;
 import tech.flowcatalyst.platform.security.secrets.SecretProvider.ValidationResult;
+import tech.flowcatalyst.platform.shared.EntityType;
+import tech.flowcatalyst.platform.shared.TypedId;
 
 import java.time.Instant;
 import java.util.List;
@@ -518,13 +520,21 @@ public class ClientAuthConfigAdminResource {
 
     private AuthConfigDto toDto(ClientAuthConfig config) {
         return new AuthConfigDto(
-            config.id != null ? config.id.toString() : null,
+            TypedId.Ops.serialize(EntityType.CLIENT_AUTH_CONFIG, config.id),
             config.emailDomain,
             config.getEffectiveConfigType(),
-            config.getEffectivePrimaryClientId(),
-            config.additionalClientIds != null ? config.additionalClientIds : List.of(),
-            config.grantedClientIds != null ? config.grantedClientIds : List.of(),
-            config.clientId, // Backwards compatibility
+            TypedId.Ops.serialize(EntityType.CLIENT, config.getEffectivePrimaryClientId()),
+            config.additionalClientIds != null
+                ? config.additionalClientIds.stream()
+                    .map(id -> TypedId.Ops.serialize(EntityType.CLIENT, id))
+                    .toList()
+                : List.of(),
+            config.grantedClientIds != null
+                ? config.grantedClientIds.stream()
+                    .map(id -> TypedId.Ops.serialize(EntityType.CLIENT, id))
+                    .toList()
+                : List.of(),
+            TypedId.Ops.serialize(EntityType.CLIENT, config.clientId), // Backwards compatibility
             config.authProvider,
             config.oidcIssuerUrl,
             config.oidcClientId,

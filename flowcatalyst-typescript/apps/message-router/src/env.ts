@@ -478,6 +478,120 @@ export const envSchema = z.object({
 	 * Default: none (basic implementation)
 	 */
 	TRAFFIC_STRATEGY_NAME: z.string().optional(),
+
+	// AWS ALB Traffic Strategy Configuration
+	/**
+	 * AWS ALB target group ARN for traffic management.
+	 * Required when TRAFFIC_STRATEGY_NAME is 'AWS_ALB_DEREGISTRATION'.
+	 */
+	ALB_TARGET_GROUP_ARN: z.string().optional(),
+
+	/**
+	 * Target ID for ALB registration (EC2 instance ID or IP address).
+	 * Required when TRAFFIC_STRATEGY_NAME is 'AWS_ALB_DEREGISTRATION'.
+	 */
+	ALB_TARGET_ID: z.string().optional(),
+
+	/**
+	 * Target port for ALB registration.
+	 * Default: 8080
+	 */
+	ALB_TARGET_PORT: z
+		.string()
+		.transform((v) => Number.parseInt(v, 10))
+		.default('8080'),
+
+	/**
+	 * Deregistration delay in seconds (time to wait for connection draining).
+	 * Default: 300 (5 minutes)
+	 */
+	ALB_DEREGISTRATION_DELAY_SECONDS: z
+		.string()
+		.transform((v) => Number.parseInt(v, 10))
+		.default('300'),
+
+	// Health Check Configuration
+	/**
+	 * Enable broker health checks.
+	 * Default: true
+	 */
+	HEALTH_CHECK_ENABLED: z
+		.string()
+		.transform((v) => v === 'true')
+		.default('true'),
+
+	/**
+	 * Broker health check interval in milliseconds.
+	 * Default: 60000 (1 minute)
+	 */
+	HEALTH_CHECK_INTERVAL_MS: z
+		.string()
+		.transform((v) => Number.parseInt(v, 10))
+		.default('60000'),
+
+	/**
+	 * Broker health check timeout in milliseconds.
+	 * Default: 5000 (5 seconds)
+	 */
+	HEALTH_CHECK_TIMEOUT_MS: z
+		.string()
+		.transform((v) => Number.parseInt(v, 10))
+		.default('5000'),
+
+	/**
+	 * Number of consecutive failures before generating warning.
+	 * Default: 3
+	 */
+	HEALTH_CHECK_FAILURE_THRESHOLD: z
+		.string()
+		.transform((v) => Number.parseInt(v, 10))
+		.default('3'),
+
+	// Queue Health Monitor Configuration
+	/**
+	 * Enable queue health monitoring.
+	 * Default: true
+	 */
+	QUEUE_HEALTH_MONITOR_ENABLED: z
+		.string()
+		.transform((v) => v === 'true')
+		.default('true'),
+
+	/**
+	 * Queue backlog threshold - depth above this generates warning.
+	 * Default: 1000
+	 */
+	QUEUE_HEALTH_BACKLOG_THRESHOLD: z
+		.string()
+		.transform((v) => Number.parseInt(v, 10))
+		.default('1000'),
+
+	/**
+	 * Queue growth threshold - per-period growth above this counts as growing.
+	 * Default: 100
+	 */
+	QUEUE_HEALTH_GROWTH_THRESHOLD: z
+		.string()
+		.transform((v) => Number.parseInt(v, 10))
+		.default('100'),
+
+	/**
+	 * Queue health check interval in milliseconds.
+	 * Default: 30000 (30 seconds)
+	 */
+	QUEUE_HEALTH_INTERVAL_MS: z
+		.string()
+		.transform((v) => Number.parseInt(v, 10))
+		.default('30000'),
+
+	/**
+	 * Number of consecutive growth periods before warning.
+	 * Default: 3 (90 seconds of growth)
+	 */
+	QUEUE_HEALTH_GROWTH_PERIODS: z
+		.string()
+		.transform((v) => Number.parseInt(v, 10))
+		.default('3'),
 });
 
 export type Env = z.infer<typeof envSchema>;

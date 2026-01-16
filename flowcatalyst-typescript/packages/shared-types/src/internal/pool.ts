@@ -11,12 +11,12 @@ export const PoolConfigSchema = z.object({
 	concurrency: z.number().int().min(1).max(1000).default(10),
 	/** Rate limit in messages per minute (null = unlimited) */
 	rateLimitPerMinute: z.number().int().min(0).nullable().default(null),
-	/** Callback URL for HTTP mediation */
-	callbackUrl: z.string().url(),
+	/** Callback URL for HTTP mediation (optional for local/embedded pools) */
+	callbackUrl: z.string().url().optional(),
 	/** Timeout for HTTP calls in milliseconds */
-	timeoutMs: z.number().int().min(1000).max(900000).default(60000),
+	timeoutMs: z.number().int().min(1000).max(900000).default(60000).optional(),
 	/** Number of retries for failed HTTP calls */
-	retries: z.number().int().min(0).max(10).default(3),
+	retries: z.number().int().min(0).max(10).default(3).optional(),
 });
 
 export type PoolConfig = z.infer<typeof PoolConfigSchema>;

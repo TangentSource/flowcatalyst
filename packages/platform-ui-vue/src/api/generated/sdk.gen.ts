@@ -205,6 +205,8 @@ import type {
   GetApiClientsData,
   GetApiClientsResponse,
   GetApiClientsByIdData,
+  GetApiClientsByIdApplicationsData,
+  GetApiClientsByIdApplicationsResponse,
   GetApiConfigPlatformData,
   GetApiConfigPlatformResponse,
   GetApiDispatchJobsData,
@@ -2722,7 +2724,7 @@ export const getApiBffEventsById = <ThrowOnError extends boolean = false>(
 
 /**
  * Get accessible clients
- * Returns the list of clients the authenticated user or service has access to, based on the token's clients claim.
+ * Returns the list of clients the authenticated principal has access to, based on their scope.
  */
 export const getApiClients = <ThrowOnError extends boolean = false>(
   options?: Options<GetApiClientsData, ThrowOnError>,
@@ -2746,6 +2748,25 @@ export const getApiClientsById = <ThrowOnError extends boolean = false>(
 ) => {
   return (options.client ?? _heyApiClient).get<unknown, unknown, ThrowOnError>({
     url: "/api/clients/{id}",
+    ...options,
+  });
+};
+
+/**
+ * Get applications for client
+ * Returns applications enabled for the specified client.
+ */
+export const getApiClientsByIdApplications = <
+  ThrowOnError extends boolean = false,
+>(
+  options: Options<GetApiClientsByIdApplicationsData, ThrowOnError>,
+) => {
+  return (options.client ?? _heyApiClient).get<
+    GetApiClientsByIdApplicationsResponse,
+    unknown,
+    ThrowOnError
+  >({
+    url: "/api/clients/{id}/applications",
     ...options,
   });
 };

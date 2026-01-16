@@ -5,9 +5,6 @@ export * from './consumer/queue-consumer.js';
 export * from './pool/process-pool.js';
 export * from './pool/message-group-handler.js';
 
-// Rate limiting
-export * from './rate-limiter.js';
-
 // Metrics
 export * from './metrics.js';
 

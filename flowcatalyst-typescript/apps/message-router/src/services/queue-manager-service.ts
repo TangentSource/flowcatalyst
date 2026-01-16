@@ -3,6 +3,8 @@ import type {
 	ConsumerHealthResponse,
 	InFlightMessage,
 	LocalConfigResponse,
+	MessageBatch,
+	MessagePointer,
 	PoolConfig,
 	PoolStats,
 	QueueMessage,
@@ -16,6 +18,7 @@ import {
 	type MessageCallback,
 } from '@flowcatalyst/queue-core';
 import type { WarningService } from './warning-service.js';
+import type { QueueValidationService } from './queue-validation-service.js';
 import {
 	PlatformConfigClient,
 	ConfigSyncService,
@@ -60,6 +63,7 @@ export class QueueManagerService {
 	private readonly circuitBreakers: CircuitBreakerManager;
 	private readonly warnings: WarningService;
 	private readonly traffic: TrafficManager;
+	private readonly queueValidation: QueueValidationService;
 	private readonly logger: Logger;
 
 	private running = false;
@@ -95,11 +99,13 @@ export class QueueManagerService {
 		circuitBreakers: CircuitBreakerManager,
 		warnings: WarningService,
 		traffic: TrafficManager,
+		queueValidation: QueueValidationService,
 		logger: Logger,
 	) {
 		this.circuitBreakers = circuitBreakers;
 		this.warnings = warnings;
 		this.traffic = traffic;
+		this.queueValidation = queueValidation;
 		this.logger = logger.child({ component: 'QueueManager' });
 		this.startTime = Date.now();
 
@@ -123,8 +129,25 @@ export class QueueManagerService {
 	async start(): Promise<void> {
 		this.logger.info({ queueType: env.QUEUE_TYPE }, 'Starting queue manager');
 
-		// Start traffic manager
-		this.traffic.start();
+		// Register mode change listener for standby support
+		this.traffic.addModeChangeListener((newMode, previousMode) => {
+			this.handleModeChange(newMode, previousMode);
+		});
+
+		// Start traffic manager (handles ALB registration)
+		const trafficResult = await this.traffic.start();
+		trafficResult.match(
+			() => this.logger.info('Traffic manager started'),
+			(error) => {
+				this.logger.error({ err: error }, 'Failed to start traffic manager');
+				this.warnings.add(
+					'CONFIGURATION',
+					'WARNING',
+					`Traffic manager failed to start: ${error.type}`,
+					'QueueManager',
+				);
+			},
+		);
 
 		if (env.QUEUE_TYPE === 'EMBEDDED') {
 			// Use embedded mode with SQLite-backed queue
@@ -195,8 +218,12 @@ export class QueueManagerService {
 		this.logger.info('Stopping queue manager');
 		this.running = false;
 
-		// Stop traffic manager
-		this.traffic.stop();
+		// Stop traffic manager (handles ALB deregistration)
+		const trafficResult = await this.traffic.stop();
+		trafficResult.match(
+			() => this.logger.info('Traffic manager stopped'),
+			(error) => this.logger.error({ err: error }, 'Error stopping traffic manager'),
+		);
 
 		// Stop config sync
 		if (this.configSyncService) {
@@ -277,6 +304,78 @@ export class QueueManagerService {
 	}
 
 	/**
+	 * Handle traffic mode changes (PRIMARY/STANDBY transitions)
+	 * Pauses consumers on STANDBY, resumes on PRIMARY
+	 */
+	private handleModeChange(newMode: 'PRIMARY' | 'STANDBY', previousMode: 'PRIMARY' | 'STANDBY'): void {
+		this.logger.info({ newMode, previousMode }, 'Traffic mode changed');
+
+		if (newMode === 'STANDBY') {
+			// Pause all consumers - they will stop polling but can be resumed
+			this.pauseAllConsumers();
+		} else if (newMode === 'PRIMARY' && previousMode === 'STANDBY') {
+			// Resume all consumers
+			this.resumeAllConsumers();
+		}
+	}
+
+	/**
+	 * Pause all consumers (stop polling without full shutdown)
+	 */
+	private pauseAllConsumers(): void {
+		this.logger.info('Pausing all consumers for standby mode');
+
+		// Stop SQS consumers
+		for (const consumer of this.consumers.values()) {
+			consumer.stop().catch((err) => {
+				this.logger.error({ err }, 'Error stopping SQS consumer');
+			});
+		}
+
+		// Stop ActiveMQ consumers
+		for (const consumer of this.activeMqConsumers.values()) {
+			consumer.stop().catch((err) => {
+				this.logger.error({ err }, 'Error stopping ActiveMQ consumer');
+			});
+		}
+
+		// Stop NATS consumers
+		for (const consumer of this.natsConsumers.values()) {
+			consumer.stop().catch((err) => {
+				this.logger.error({ err }, 'Error stopping NATS consumer');
+			});
+		}
+	}
+
+	/**
+	 * Resume all consumers (restart polling)
+	 */
+	private resumeAllConsumers(): void {
+		this.logger.info('Resuming all consumers from standby mode');
+
+		// Restart SQS consumers
+		for (const consumer of this.consumers.values()) {
+			consumer.start().catch((err) => {
+				this.logger.error({ err }, 'Error starting SQS consumer');
+			});
+		}
+
+		// Restart ActiveMQ consumers
+		for (const consumer of this.activeMqConsumers.values()) {
+			consumer.start().catch((err) => {
+				this.logger.error({ err }, 'Error starting ActiveMQ consumer');
+			});
+		}
+
+		// Restart NATS consumers
+		for (const consumer of this.natsConsumers.values()) {
+			consumer.start().catch((err) => {
+				this.logger.error({ err }, 'Error starting NATS consumer');
+			});
+		}
+	}
+
+	/**
 	 * Apply new configuration
 	 */
 	private async applyConfiguration(config: MessageRouterConfig): Promise<void> {
@@ -290,6 +389,36 @@ export class QueueManagerService {
 		);
 
 		this.currentConfig = config;
+
+		// Filter queues with valid identifiers, warn about invalid ones
+		const validQueueConfigs: Array<{ queueUri: string } | { queueName: string }> = [];
+		for (const q of config.queues) {
+			const queueUri = q.queueUri?.trim() || null;
+			const queueName = q.queueName?.trim() || null;
+
+			if (queueUri) {
+				validQueueConfigs.push({ queueUri, ...(queueName && { queueName }) });
+			} else if (queueName) {
+				validQueueConfigs.push({ queueName });
+			} else {
+				this.warnings.add(
+					'CONFIGURATION',
+					'WARNING',
+					'Queue configuration missing both queueUri and queueName - skipping validation',
+					'QueueManagerService',
+				);
+				this.logger.warn({ queue: q }, 'Queue configuration missing identifier, skipping');
+			}
+		}
+
+		// Validate queues (raises warnings for missing queues but doesn't stop)
+		const validationResult = await this.queueValidation.validateQueues(validQueueConfigs);
+		if (validationResult.failed > 0) {
+			this.logger.warn(
+				{ validated: validationResult.validated, failed: validationResult.failed },
+				'Some queues failed validation (continuing with available queues)',
+			);
+		}
 
 		// Sync process pools
 		await this.syncProcessPools(config.processingPools);
@@ -395,10 +524,10 @@ export class QueueManagerService {
 	}
 
 	/**
-	 * Handle a batch of messages from a consumer
+	 * Handle a batch of messages from an SQS consumer
 	 */
 	private async handleBatch(
-		batch: { batchId: string; messages: Array<{ brokerMessageId: string; messageId: string; pointer: { poolCode: string; messageGroupId: string; callbackUrl?: string; authToken?: string; payload: unknown } }>; queueId: string },
+		batch: MessageBatch,
 		callbacks: Map<string, SqsMessageCallback>,
 	): Promise<void> {
 		const queueName = this.extractQueueName(batch.queueId);
@@ -473,8 +602,13 @@ export class QueueManagerService {
 			const queueMessage: QueueMessage = {
 				messageId: message.messageId,
 				brokerMessageId: message.brokerMessageId,
+				receiptHandle: message.receiptHandle,
 				batchId: batch.batchId,
+				queueId: batch.queueId,
+				receiveCount: message.receiveCount,
+				receivedAt: message.receivedAt,
 				pointer: {
+					messageId: message.messageId,
 					poolCode: message.pointer.poolCode,
 					messageGroupId: message.pointer.messageGroupId,
 					callbackUrl: message.pointer.callbackUrl,
@@ -547,17 +681,12 @@ export class QueueManagerService {
 			const callback = callbacks.get(message.messageId);
 
 			// Parse message payload to get the pointer
-			let pointer: {
-				poolCode: string;
-				messageGroupId: string;
-				callbackUrl?: string;
-				authToken?: string;
-				payload: unknown;
-			};
+			let pointer: MessagePointer;
 
 			try {
 				const parsed = message.payload as Record<string, unknown>;
 				pointer = {
+					messageId: message.messageId,
 					poolCode: (parsed['poolCode'] as string) || 'POOL-MEDIUM',
 					messageGroupId: message.messageGroupId,
 					callbackUrl: parsed['callbackUrl'] as string | undefined,
@@ -566,6 +695,7 @@ export class QueueManagerService {
 				};
 			} catch {
 				pointer = {
+					messageId: message.messageId,
 					poolCode: 'POOL-MEDIUM',
 					messageGroupId: message.messageGroupId,
 					payload: message.payload,
@@ -621,7 +751,11 @@ export class QueueManagerService {
 			const queueMessage: QueueMessage = {
 				messageId: message.messageId,
 				brokerMessageId: message.messageId,
+				receiptHandle: message.receiptHandle,
+				receiveCount: message.receiveCount,
+				receivedAt: new Date(),
 				batchId: batch.batchId,
+				queueId: batch.queueId,
 				pointer,
 			};
 
@@ -789,17 +923,12 @@ export class QueueManagerService {
 			const callback = callbacks.get(message.brokerMessageId);
 
 			// Parse message body to get the pointer
-			let pointer: {
-				poolCode: string;
-				messageGroupId: string;
-				callbackUrl?: string;
-				authToken?: string;
-				payload: unknown;
-			};
+			let pointer: MessagePointer;
 
 			try {
 				const parsed = JSON.parse(message.body) as Record<string, unknown>;
 				pointer = {
+					messageId: message.messageId,
 					poolCode: (parsed['poolCode'] as string) || 'POOL-MEDIUM',
 					messageGroupId: (parsed['messageGroupId'] as string) || message.messageId,
 					callbackUrl: parsed['callbackUrl'] as string | undefined,
@@ -809,6 +938,7 @@ export class QueueManagerService {
 			} catch {
 				// If not JSON, treat the entire body as payload
 				pointer = {
+					messageId: message.messageId,
 					poolCode: 'POOL-MEDIUM',
 					messageGroupId: message.messageId,
 					payload: message.body,
@@ -863,7 +993,11 @@ export class QueueManagerService {
 			const queueMessage: QueueMessage = {
 				messageId: message.messageId,
 				brokerMessageId: message.brokerMessageId,
+				receiptHandle: message.brokerMessageId, // ActiveMQ uses brokerMessageId for ack/nack
+				receiveCount: message.receiveCount,
+				receivedAt: new Date(),
 				batchId: batch.batchId,
+				queueId: batch.queueId,
 				pointer,
 			};
 
@@ -980,17 +1114,12 @@ export class QueueManagerService {
 			const callback = callbacks.get(message.brokerMessageId);
 
 			// Parse message data to get the pointer
-			let pointer: {
-				poolCode: string;
-				messageGroupId: string;
-				callbackUrl?: string;
-				authToken?: string;
-				payload: unknown;
-			};
+			let pointer: MessagePointer;
 
 			try {
 				const parsed = JSON.parse(message.data) as Record<string, unknown>;
 				pointer = {
+					messageId: message.messageId,
 					poolCode: (parsed['poolCode'] as string) || 'POOL-MEDIUM',
 					messageGroupId: (parsed['messageGroupId'] as string) || message.messageId,
 					callbackUrl: parsed['callbackUrl'] as string | undefined,
@@ -1000,6 +1129,7 @@ export class QueueManagerService {
 			} catch {
 				// If not JSON, treat the entire data as payload
 				pointer = {
+					messageId: message.messageId,
 					poolCode: 'POOL-MEDIUM',
 					messageGroupId: message.messageId,
 					payload: message.data,
@@ -1054,7 +1184,11 @@ export class QueueManagerService {
 			const queueMessage: QueueMessage = {
 				messageId: message.messageId,
 				brokerMessageId: message.brokerMessageId,
+				receiptHandle: message.brokerMessageId, // NATS uses seq for ack/nack
+				receiveCount: message.redeliveryCount + 1, // redeliveryCount starts at 0
+				receivedAt: new Date(),
 				batchId: batch.batchId,
+				queueId: batch.queueId,
 				pointer,
 			};
 
@@ -1267,14 +1401,15 @@ export class QueueManagerService {
 	 * Get circuit breaker statistics
 	 */
 	getCircuitBreakerStats() {
-		return this.circuitBreakers.getStats();
+		return this.circuitBreakers.getAllStats();
 	}
 
 	/**
 	 * Get HTTP mediator statistics
+	 * Note: HttpMediator doesn't track stats currently
 	 */
 	getMediatorStats() {
-		return this.httpMediator.getStats();
+		return {};
 	}
 
 	/**

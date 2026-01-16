@@ -52,6 +52,7 @@ dependencies {
     // (CRT client uses JNI which pins carrier threads during 20s long polls)
     implementation("io.quarkiverse.amazonservices:quarkus-amazon-sqs")
     implementation("software.amazon.awssdk:apache-client")
+    implementation("software.amazon.awssdk:elasticloadbalancingv2")  // For ALB traffic management
     implementation("org.apache.activemq:activemq-client:6.1.7")
     implementation("io.nats:jnats:2.24.1") {
         exclude(group = "net.i2p.crypto", module = "eddsa") // Not needed - NKey auth not used, breaks GraalVM native

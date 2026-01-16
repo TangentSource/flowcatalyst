@@ -1,6 +1,7 @@
 package tech.flowcatalyst.platform.cache;
 
 import io.quarkus.arc.lookup.LookupIfProperty;
+import jakarta.enterprise.inject.Typed;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.jboss.logging.Logger;
@@ -23,8 +24,12 @@ import java.util.Optional;
  *
  * <p>This implementation is a placeholder. When Redis extension is added,
  * uncomment the Redis-specific code.
+ *
+ * <p>Note: @Typed excludes CacheStore from bean types so only the
+ * CacheStoreProducer can provide the CacheStore interface.
  */
 @Singleton
+@Typed(RedisCacheStore.class)
 @LookupIfProperty(name = "flowcatalyst.cache.type", stringValue = "REDIS")
 public class RedisCacheStore implements CacheStore {
 

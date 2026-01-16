@@ -67,6 +67,12 @@ export class SeederService {
 
 		this.logger.info({ count, queue, endpoint, messageGroupMode }, 'Seeding messages');
 
+		// Check if embedded queue is available
+		if (!this.queueManager.hasEmbeddedQueue()) {
+			this.logger.warn('Embedded queue not available - seeding only works in EMBEDDED mode');
+			return { messagesSent: 0 };
+		}
+
 		// Resolve queue
 		const resolvedQueue = this.resolveQueue(queue);
 
@@ -75,12 +81,15 @@ export class SeederService {
 
 		// Generate and send messages
 		let messagesSent = 0;
+		let duplicates = 0;
+		let errors = 0;
 
 		for (let i = 0; i < count; i++) {
 			const messageGroupId = this.getMessageGroupId(messageGroupMode, i);
 			const messageId = randomUUID();
 
-			const message = {
+			// Build the message payload that will be processed by the consumer
+			const messagePayload = {
 				messageId,
 				poolCode: this.getPoolCodeFromQueue(resolvedQueue),
 				messageGroupId,
@@ -93,12 +102,31 @@ export class SeederService {
 				createdAt: new Date().toISOString(),
 			};
 
-			// TODO: Actually send to queue when SQS consumer is implemented
-			this.logger.debug({ messageId, queue: resolvedQueue }, 'Message created (mock)');
-			messagesSent++;
+			// Publish to embedded queue
+			const result = this.queueManager.publishToEmbeddedQueue({
+				messageId,
+				messageGroupId,
+				messageDeduplicationId: messageId, // Use messageId for deduplication
+				payload: messagePayload,
+			});
+
+			if (result.success) {
+				if (result.deduplicated) {
+					duplicates++;
+				} else {
+					messagesSent++;
+				}
+				this.logger.debug({ messageId, queue: resolvedQueue }, 'Message published');
+			} else {
+				errors++;
+				this.logger.error({ messageId, error: result.error }, 'Failed to publish message');
+			}
 		}
 
-		this.logger.info({ messagesSent, queue: resolvedQueue }, 'Messages seeded');
+		this.logger.info(
+			{ messagesSent, duplicates, errors, queue: resolvedQueue },
+			'Messages seeded',
+		);
 
 		return { messagesSent };
 	}
@@ -109,7 +137,8 @@ export class SeederService {
 	private resolveQueue(queue: string): string {
 		if (queue === 'random') {
 			const keys = Object.keys(this.queueMappings);
-			const randomKey = keys[Math.floor(Math.random() * keys.length)];
+			if (keys.length === 0) return queue;
+			const randomKey = keys[Math.floor(Math.random() * keys.length)] as string;
 			return this.queueMappings[randomKey] ?? queue;
 		}
 		return this.queueMappings[queue] ?? queue;
@@ -121,7 +150,8 @@ export class SeederService {
 	private resolveEndpoint(endpoint: string): string {
 		if (endpoint === 'random') {
 			const keys = Object.keys(this.endpointMappings);
-			const randomKey = keys[Math.floor(Math.random() * keys.length)];
+			if (keys.length === 0) return endpoint;
+			const randomKey = keys[Math.floor(Math.random() * keys.length)] as string;
 			return this.endpointMappings[randomKey] ?? endpoint;
 		}
 		return this.endpointMappings[endpoint] ?? endpoint;

@@ -41,6 +41,8 @@ import tech.flowcatalyst.platform.principal.operations.grantclientaccess.GrantCl
 import tech.flowcatalyst.platform.principal.operations.revokeclientaccess.RevokeClientAccessCommand;
 import tech.flowcatalyst.platform.principal.operations.updateuser.UpdateUserCommand;
 import tech.flowcatalyst.platform.principal.operations.assignroles.AssignRolesCommand;
+import tech.flowcatalyst.platform.shared.EntityType;
+import tech.flowcatalyst.platform.shared.TypedId;
 
 import java.time.Instant;
 import java.util.List;
@@ -595,17 +597,17 @@ public class PrincipalAdminResource {
 
         boolean isAnchorUser = clientAccessService.isAnchorDomainUser(principal);
 
-        // Get granted client IDs as strings (TSIDs exceed JS Number.MAX_SAFE_INTEGER)
+        // Get granted client IDs with typed prefix
         List<ClientAccessGrant> grants = grantRepo.findByPrincipalId(principal.id);
         Set<String> grantedClientIds = grants.stream()
-            .map(g -> String.valueOf(g.clientId))
+            .map(g -> TypedId.Ops.serialize(EntityType.CLIENT, g.clientId))
             .collect(Collectors.toSet());
 
         return new PrincipalDto(
-            String.valueOf(principal.id),
+            TypedId.Ops.serialize(EntityType.PRINCIPAL, principal.id),
             principal.type,
             principal.scope,
-            principal.clientId != null ? String.valueOf(principal.clientId) : null,
+            TypedId.Ops.serialize(EntityType.CLIENT, principal.clientId),
             principal.name,
             principal.active,
             email,
@@ -630,16 +632,16 @@ public class PrincipalAdminResource {
 
         boolean isAnchorUser = clientAccessService.isAnchorDomainUser(principal);
 
-        // Convert IDs to strings (TSIDs exceed JS Number.MAX_SAFE_INTEGER)
-        Set<String> grantedClientIdsAsStrings = grantedClientIds.stream()
-            .map(String::valueOf)
+        // Serialize client IDs with typed prefix
+        Set<String> grantedClientIdsTyped = grantedClientIds.stream()
+            .map(id -> TypedId.Ops.serialize(EntityType.CLIENT, id))
             .collect(Collectors.toSet());
 
         return new PrincipalDetailDto(
-            String.valueOf(principal.id),
+            TypedId.Ops.serialize(EntityType.PRINCIPAL, principal.id),
             principal.type,
             principal.scope,
-            principal.clientId != null ? String.valueOf(principal.clientId) : null,
+            TypedId.Ops.serialize(EntityType.CLIENT, principal.clientId),
             principal.name,
             principal.active,
             email,
@@ -647,7 +649,7 @@ public class PrincipalAdminResource {
             lastLoginAt,
             roles,
             isAnchorUser,
-            grantedClientIdsAsStrings,
+            grantedClientIdsTyped,
             principal.createdAt,
             principal.updatedAt
         );

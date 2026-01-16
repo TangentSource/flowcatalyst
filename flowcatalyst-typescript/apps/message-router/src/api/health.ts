@@ -84,9 +84,9 @@ const readyRoute = createRoute({
 	},
 });
 
-healthRoutes.openapi(readyRoute, (c) => {
+healthRoutes.openapi(readyRoute, async (c) => {
 	const services = c.get('services');
-	const health = services.health.getReadiness();
+	const health = await services.health.getReadiness();
 
 	const response = {
 		status: health.healthy ? 'READY' : 'NOT_READY',

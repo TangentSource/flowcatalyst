@@ -25,7 +25,9 @@ import tech.flowcatalyst.platform.authentication.oauth.OAuthClientRepository;
 import tech.flowcatalyst.platform.cors.CorsAllowedOrigin;
 import tech.flowcatalyst.platform.cors.CorsAllowedOriginRepository;
 import tech.flowcatalyst.platform.security.secrets.SecretService;
+import tech.flowcatalyst.platform.shared.EntityType;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
+import tech.flowcatalyst.platform.shared.TypedId;
 
 import java.security.SecureRandom;
 import java.time.Instant;
@@ -687,13 +689,15 @@ public class OAuthClientAdminResource {
         if (client.applicationIds != null) {
             for (String appId : client.applicationIds) {
                 String appName = appIdToName.getOrDefault(appId, "Unknown");
-                applications.add(new ApplicationRef(appId, appName));
+                applications.add(new ApplicationRef(
+                    TypedId.Ops.serialize(EntityType.APPLICATION, appId),
+                    appName));
             }
         }
 
         return new ClientDto(
-            client.id,
-            toExternalClientId(client.clientId),  // Transform to external format
+            TypedId.Ops.serialize(EntityType.OAUTH_CLIENT, client.id),
+            toExternalClientId(client.clientId),  // Transform to external format (oauth_ prefix for client_id field)
             client.clientName,
             client.clientType,
             client.redirectUris != null ? new ArrayList<>(client.redirectUris) : List.of(),
@@ -702,7 +706,7 @@ public class OAuthClientAdminResource {
             client.defaultScopes != null ? List.of(client.defaultScopes.split(" ")) : List.of(),
             client.pkceRequired,
             applications,
-            client.serviceAccountPrincipalId,
+            TypedId.Ops.serialize(EntityType.PRINCIPAL, client.serviceAccountPrincipalId),
             client.active,
             client.createdAt,
             client.updatedAt

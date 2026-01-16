@@ -34,11 +34,15 @@ export interface DispatchJob {
   completedAt?: string
 }
 
+export interface ListResponse<T> {
+  items: T[]
+}
+
 export interface Client {
   id: string
   name: string
-  code?: string
-  domain?: string
+  identifier?: string
+  status?: string
 }
 
 export interface Application {

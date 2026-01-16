@@ -19,7 +19,9 @@ import tech.flowcatalyst.platform.principal.AnchorDomain;
 import tech.flowcatalyst.platform.principal.AnchorDomainRepository;
 import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.PrincipalRepository;
+import tech.flowcatalyst.platform.shared.EntityType;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
+import tech.flowcatalyst.platform.shared.TypedId;
 
 import java.time.Instant;
 import java.util.List;
@@ -229,7 +231,7 @@ public class AnchorDomainAdminResource {
         long userCount = principalRepo.countByEmailDomain(domain.domain);
 
         return new AnchorDomainDto(
-            domain.id != null ? domain.id.toString() : null,
+            TypedId.Ops.serialize(EntityType.ANCHOR_DOMAIN, domain.id),
             domain.domain,
             userCount,
             domain.createdAt

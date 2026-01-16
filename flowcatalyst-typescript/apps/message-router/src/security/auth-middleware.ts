@@ -17,9 +17,9 @@ export interface AuthConfig {
 	/** Authentication mode */
 	mode: AuthMode;
 	/** BasicAuth configuration */
-	basic?: BasicAuthConfig;
+	basic?: BasicAuthConfig | undefined;
 	/** OIDC configuration */
-	oidc?: OidcConfig;
+	oidc?: OidcConfig | undefined;
 }
 
 /**

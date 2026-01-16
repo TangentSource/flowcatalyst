@@ -21,6 +21,9 @@ import tech.flowcatalyst.platform.common.ExecutionContext;
 import tech.flowcatalyst.platform.common.Result;
 import tech.flowcatalyst.platform.common.TracingContext;
 import tech.flowcatalyst.platform.common.errors.UseCaseError;
+import tech.flowcatalyst.platform.shared.EntityType;
+import tech.flowcatalyst.platform.shared.TypedId;
+import tech.flowcatalyst.platform.shared.TypedIdParam;
 
 import java.util.List;
 import java.util.Map;
@@ -67,9 +70,11 @@ public class ApplicationResource {
     @Operation(summary = "Get application by ID")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Application found"),
+        @APIResponse(responseCode = "400", description = "Invalid application ID format"),
         @APIResponse(responseCode = "404", description = "Application not found")
     })
-    public Response getApplication(@PathParam("id") String id) {
+    public Response getApplication(
+            @TypedIdParam(EntityType.APPLICATION) @PathParam("id") String id) {
         return applicationOperations.findById(id)
             .map(app -> Response.ok(ApplicationResponse.from(app)).build())
             .orElse(Response.status(404)
@@ -127,10 +132,12 @@ public class ApplicationResource {
     @Operation(summary = "Update an application")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Application updated"),
-        @APIResponse(responseCode = "400", description = "Invalid request"),
+        @APIResponse(responseCode = "400", description = "Invalid request or ID format"),
         @APIResponse(responseCode = "404", description = "Application not found")
     })
-    public Response updateApplication(@PathParam("id") String id, UpdateApplicationRequest request) {
+    public Response updateApplication(
+            @TypedIdParam(EntityType.APPLICATION) @PathParam("id") String id,
+            UpdateApplicationRequest request) {
         ExecutionContext context = createExecutionContext();
 
         UpdateApplicationCommand command = new UpdateApplicationCommand(
@@ -158,10 +165,11 @@ public class ApplicationResource {
     @Operation(summary = "Activate an application")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Application activated"),
-        @APIResponse(responseCode = "400", description = "Application already active"),
+        @APIResponse(responseCode = "400", description = "Application already active or invalid ID format"),
         @APIResponse(responseCode = "404", description = "Application not found")
     })
-    public Response activateApplication(@PathParam("id") String id) {
+    public Response activateApplication(
+            @TypedIdParam(EntityType.APPLICATION) @PathParam("id") String id) {
         ExecutionContext context = createExecutionContext();
 
         ActivateApplicationCommand command = new ActivateApplicationCommand(id);
@@ -183,10 +191,11 @@ public class ApplicationResource {
     @Operation(summary = "Deactivate an application")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Application deactivated"),
-        @APIResponse(responseCode = "400", description = "Application already deactivated"),
+        @APIResponse(responseCode = "400", description = "Application already deactivated or invalid ID format"),
         @APIResponse(responseCode = "404", description = "Application not found")
     })
-    public Response deactivateApplication(@PathParam("id") String id) {
+    public Response deactivateApplication(
+            @TypedIdParam(EntityType.APPLICATION) @PathParam("id") String id) {
         ExecutionContext context = createExecutionContext();
 
         DeactivateApplicationCommand command = new DeactivateApplicationCommand(id);
@@ -208,10 +217,11 @@ public class ApplicationResource {
     @Operation(summary = "Delete an application")
     @APIResponses({
         @APIResponse(responseCode = "204", description = "Application deleted"),
-        @APIResponse(responseCode = "400", description = "Cannot delete active application or application with configurations"),
+        @APIResponse(responseCode = "400", description = "Cannot delete active application or application with configurations, or invalid ID format"),
         @APIResponse(responseCode = "404", description = "Application not found")
     })
-    public Response deleteApplication(@PathParam("id") String id) {
+    public Response deleteApplication(
+            @TypedIdParam(EntityType.APPLICATION) @PathParam("id") String id) {
         ExecutionContext context = createExecutionContext();
 
         DeleteApplicationCommand command = new DeleteApplicationCommand(id);
@@ -264,7 +274,7 @@ public class ApplicationResource {
     ) {
         public static ApplicationResponse from(Application app) {
             return new ApplicationResponse(
-                app.id != null ? app.id.toString() : null,
+                app.id != null ? TypedId.Ops.serialize(EntityType.APPLICATION, app.id) : null,
                 app.code,
                 app.name,
                 app.description,

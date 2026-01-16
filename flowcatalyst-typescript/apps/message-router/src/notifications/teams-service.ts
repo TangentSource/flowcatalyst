@@ -158,10 +158,10 @@ export class TeamsNotificationService implements NotificationService {
 		// Group by category
 		const groupedByCategory = warnings.reduce(
 			(acc, warning) => {
-				if (!acc[warning.category]) {
-					acc[warning.category] = [];
-				}
-				acc[warning.category].push(warning);
+				const category = warning.category;
+				const existing = acc[category] ?? [];
+				existing.push(warning);
+				acc[category] = existing;
 				return acc;
 			},
 			{} as Record<string, WarningNotification[]>,

@@ -65,9 +65,9 @@ export interface NatsConsumerConfig {
 	/** Connection name for identification */
 	connectionName: string;
 	/** Username for authentication (optional) */
-	username?: string;
+	username?: string | undefined;
 	/** Password for authentication (optional) */
-	password?: string;
+	password?: string | undefined;
 	/** Stream name */
 	streamName: string;
 	/** Durable consumer name */

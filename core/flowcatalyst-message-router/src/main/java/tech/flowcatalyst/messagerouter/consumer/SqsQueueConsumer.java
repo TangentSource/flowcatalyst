@@ -128,9 +128,9 @@ public class SqsQueueConsumer extends AbstractQueueConsumer {
 
                 // No delay for empty queue - SQS long-poll already waited up to 20 seconds
                 // Small delay for partial batches to allow message accumulation
-                if (messages.size() > 0 && messages.size() < maxMessagesPerPoll) {
+                if (!messages.isEmpty() && messages.size() < maxMessagesPerPoll) {
                     try {
-                        Thread.sleep(50); // 50ms delay for partial batch
+                        Thread.sleep(100); //delay for partial batch for cost control
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                         if (!running.get()) {

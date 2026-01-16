@@ -41,6 +41,10 @@ export type ApplicationListResponse = {
   items?: Array<ApplicationResponse>;
 };
 
+export type ApplicationListResponse1 = {
+  items?: Array<ApplicationResponse1>;
+};
+
 export type ApplicationRef = {
   id?: string;
   name?: string;
@@ -56,6 +60,14 @@ export type ApplicationResponse = {
   active?: boolean;
   createdAt?: string;
   updatedAt?: string;
+};
+
+export type ApplicationResponse1 = {
+  id?: string;
+  name?: string;
+  code?: string;
+  website?: string;
+  logo?: string;
 };
 
 export type AssignRoleRequest = {
@@ -2271,6 +2283,10 @@ export type GetApiAdminClientsByIdData = {
 
 export type GetApiAdminClientsByIdErrors = {
   /**
+   * Invalid client ID format
+   */
+  400: unknown;
+  /**
    * Not authenticated
    */
   401: unknown;
@@ -2305,7 +2321,7 @@ export type PutApiAdminClientsByIdData = {
 
 export type PutApiAdminClientsByIdErrors = {
   /**
-   * Invalid request
+   * Invalid request or client ID format
    */
   400: unknown;
   /**
@@ -2340,6 +2356,10 @@ export type PostApiAdminClientsByIdActivateData = {
 
 export type PostApiAdminClientsByIdActivateErrors = {
   /**
+   * Invalid client ID format
+   */
+  400: unknown;
+  /**
    * Not authenticated
    */
   401: unknown;
@@ -2370,6 +2390,10 @@ export type GetApiAdminClientsByIdApplicationsData = {
 };
 
 export type GetApiAdminClientsByIdApplicationsErrors = {
+  /**
+   * Invalid client ID format
+   */
+  400: unknown;
   /**
    * Not authenticated
    */
@@ -2405,7 +2429,7 @@ export type PutApiAdminClientsByIdApplicationsData = {
 
 export type PutApiAdminClientsByIdApplicationsErrors = {
   /**
-   * Bad Request
+   * Invalid ID format
    */
   400: unknown;
   /**
@@ -2441,6 +2465,10 @@ export type PostApiAdminClientsByIdApplicationsByApplicationIdDisableData = {
 
 export type PostApiAdminClientsByIdApplicationsByApplicationIdDisableErrors = {
   /**
+   * Invalid ID format
+   */
+  400: unknown;
+  /**
    * Not authenticated
    */
   401: unknown;
@@ -2474,6 +2502,10 @@ export type PostApiAdminClientsByIdApplicationsByApplicationIdEnableData = {
 
 export type PostApiAdminClientsByIdApplicationsByApplicationIdEnableErrors = {
   /**
+   * Invalid ID format
+   */
+  400: unknown;
+  /**
    * Not authenticated
    */
   401: unknown;
@@ -2506,7 +2538,7 @@ export type PostApiAdminClientsByIdDeactivateData = {
 
 export type PostApiAdminClientsByIdDeactivateErrors = {
   /**
-   * Bad Request
+   * Invalid client ID format
    */
   400: unknown;
   /**
@@ -2541,7 +2573,7 @@ export type PostApiAdminClientsByIdNotesData = {
 
 export type PostApiAdminClientsByIdNotesErrors = {
   /**
-   * Bad Request
+   * Invalid client ID format
    */
   400: unknown;
   /**
@@ -2576,7 +2608,7 @@ export type PostApiAdminClientsByIdSuspendData = {
 
 export type PostApiAdminClientsByIdSuspendErrors = {
   /**
-   * Bad Request
+   * Invalid client ID format
    */
   400: unknown;
   /**
@@ -4432,7 +4464,7 @@ export type DeleteApiApplicationsByIdData = {
 
 export type DeleteApiApplicationsByIdErrors = {
   /**
-   * Cannot delete active application or application with configurations
+   * Cannot delete active application or application with configurations, or invalid ID format
    */
   400: unknown;
   /**
@@ -4462,6 +4494,10 @@ export type GetApiApplicationsByIdData = {
 
 export type GetApiApplicationsByIdErrors = {
   /**
+   * Invalid application ID format
+   */
+  400: unknown;
+  /**
    * Application not found
    */
   404: unknown;
@@ -4485,7 +4521,7 @@ export type PutApiApplicationsByIdData = {
 
 export type PutApiApplicationsByIdErrors = {
   /**
-   * Invalid request
+   * Invalid request or ID format
    */
   400: unknown;
   /**
@@ -4512,7 +4548,7 @@ export type PostApiApplicationsByIdActivateData = {
 
 export type PostApiApplicationsByIdActivateErrors = {
   /**
-   * Application already active
+   * Application already active or invalid ID format
    */
   400: unknown;
   /**
@@ -4539,7 +4575,7 @@ export type PostApiApplicationsByIdDeactivateData = {
 
 export type PostApiApplicationsByIdDeactivateErrors = {
   /**
-   * Application already deactivated
+   * Application already deactivated or invalid ID format
    */
   400: unknown;
   /**
@@ -4830,6 +4866,10 @@ export type GetApiClientsByIdData = {
 
 export type GetApiClientsByIdErrors = {
   /**
+   * Invalid client ID format
+   */
+  400: unknown;
+  /**
    * Not authenticated
    */
   401: unknown;
@@ -4849,6 +4889,44 @@ export type GetApiClientsByIdResponses = {
    */
   200: unknown;
 };
+
+export type GetApiClientsByIdApplicationsData = {
+  body?: never;
+  path: {
+    id: string;
+  };
+  query?: never;
+  url: "/api/clients/{id}/applications";
+};
+
+export type GetApiClientsByIdApplicationsErrors = {
+  /**
+   * Invalid client ID format
+   */
+  400: unknown;
+  /**
+   * Not authenticated
+   */
+  401: unknown;
+  /**
+   * Access denied
+   */
+  403: unknown;
+  /**
+   * Client not found
+   */
+  404: unknown;
+};
+
+export type GetApiClientsByIdApplicationsResponses = {
+  /**
+   * List of applications
+   */
+  200: ApplicationListResponse1;
+};
+
+export type GetApiClientsByIdApplicationsResponse =
+  GetApiClientsByIdApplicationsResponses[keyof GetApiClientsByIdApplicationsResponses];
 
 export type GetApiConfigPlatformData = {
   body?: never;

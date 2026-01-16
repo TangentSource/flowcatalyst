@@ -30,6 +30,9 @@ import tech.flowcatalyst.platform.client.Client;
 import tech.flowcatalyst.platform.client.ClientService;
 import tech.flowcatalyst.platform.client.ClientStatus;
 import tech.flowcatalyst.platform.common.ExecutionContext;
+import tech.flowcatalyst.platform.shared.EntityType;
+import tech.flowcatalyst.platform.shared.TypedId;
+import tech.flowcatalyst.platform.shared.TypedIdParam;
 
 import java.time.Instant;
 import java.util.List;
@@ -160,11 +163,13 @@ public class ClientAdminResource {
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Client details",
             content = @Content(schema = @Schema(implementation = ClientDto.class))),
+        @APIResponse(responseCode = "400", description = "Invalid client ID format"),
         @APIResponse(responseCode = "404", description = "Client not found"),
         @APIResponse(responseCode = "401", description = "Not authenticated"),
         @APIResponse(responseCode = "403", description = "Insufficient permissions")
     })
-    public Response getClient(@PathParam("id") String id) {
+    public Response getClient(
+            @TypedIdParam(EntityType.CLIENT) @PathParam("id") String id) {
 
         String principalId = auditContext.requirePrincipalId();
         authorizationService.requirePermission(principalId, PlatformAdminPermissions.CLIENT_VIEW);
@@ -241,12 +246,14 @@ public class ClientAdminResource {
     @Operation(summary = "Update client details")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Client updated"),
+        @APIResponse(responseCode = "400", description = "Invalid request or client ID format"),
         @APIResponse(responseCode = "404", description = "Client not found"),
-        @APIResponse(responseCode = "400", description = "Invalid request"),
         @APIResponse(responseCode = "401", description = "Not authenticated"),
         @APIResponse(responseCode = "403", description = "Insufficient permissions")
     })
-    public Response updateClient(@PathParam("id") String id, @Valid UpdateClientRequest request) {
+    public Response updateClient(
+            @TypedIdParam(EntityType.CLIENT) @PathParam("id") String id,
+            @Valid UpdateClientRequest request) {
 
         String principalId = auditContext.requirePrincipalId();
         authorizationService.requirePermission(principalId, PlatformAdminPermissions.CLIENT_UPDATE);
@@ -272,11 +279,13 @@ public class ClientAdminResource {
     @Operation(summary = "Activate a client")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Client activated"),
+        @APIResponse(responseCode = "400", description = "Invalid client ID format"),
         @APIResponse(responseCode = "404", description = "Client not found"),
         @APIResponse(responseCode = "401", description = "Not authenticated"),
         @APIResponse(responseCode = "403", description = "Insufficient permissions")
     })
-    public Response activateClient(@PathParam("id") String id) {
+    public Response activateClient(
+            @TypedIdParam(EntityType.CLIENT) @PathParam("id") String id) {
 
         String principalId = auditContext.requirePrincipalId();
         authorizationService.requirePermission(principalId, PlatformAdminPermissions.CLIENT_UPDATE);
@@ -300,11 +309,14 @@ public class ClientAdminResource {
     @Operation(summary = "Suspend a client")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Client suspended"),
+        @APIResponse(responseCode = "400", description = "Invalid client ID format"),
         @APIResponse(responseCode = "404", description = "Client not found"),
         @APIResponse(responseCode = "401", description = "Not authenticated"),
         @APIResponse(responseCode = "403", description = "Insufficient permissions")
     })
-    public Response suspendClient(@PathParam("id") String id, @Valid StatusChangeRequest request) {
+    public Response suspendClient(
+            @TypedIdParam(EntityType.CLIENT) @PathParam("id") String id,
+            @Valid StatusChangeRequest request) {
 
         String principalId = auditContext.requirePrincipalId();
         authorizationService.requirePermission(principalId, PlatformAdminPermissions.CLIENT_UPDATE);
@@ -328,11 +340,14 @@ public class ClientAdminResource {
     @Operation(summary = "Deactivate a client")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Client deactivated"),
+        @APIResponse(responseCode = "400", description = "Invalid client ID format"),
         @APIResponse(responseCode = "404", description = "Client not found"),
         @APIResponse(responseCode = "401", description = "Not authenticated"),
         @APIResponse(responseCode = "403", description = "Insufficient permissions")
     })
-    public Response deactivateClient(@PathParam("id") String id, @Valid StatusChangeRequest request) {
+    public Response deactivateClient(
+            @TypedIdParam(EntityType.CLIENT) @PathParam("id") String id,
+            @Valid StatusChangeRequest request) {
 
         String principalId = auditContext.requirePrincipalId();
         authorizationService.requirePermission(principalId, PlatformAdminPermissions.CLIENT_DELETE);
@@ -358,11 +373,14 @@ public class ClientAdminResource {
     @Operation(summary = "Add audit note to client")
     @APIResponses({
         @APIResponse(responseCode = "201", description = "Note added"),
+        @APIResponse(responseCode = "400", description = "Invalid client ID format"),
         @APIResponse(responseCode = "404", description = "Client not found"),
         @APIResponse(responseCode = "401", description = "Not authenticated"),
         @APIResponse(responseCode = "403", description = "Insufficient permissions")
     })
-    public Response addNote(@PathParam("id") String id, @Valid AddNoteRequest request) {
+    public Response addNote(
+            @TypedIdParam(EntityType.CLIENT) @PathParam("id") String id,
+            @Valid AddNoteRequest request) {
 
         String principalId = auditContext.requirePrincipalId();
         authorizationService.requirePermission(principalId, PlatformAdminPermissions.CLIENT_UPDATE);
@@ -391,11 +409,13 @@ public class ClientAdminResource {
     @APIResponses({
         @APIResponse(responseCode = "200", description = "List of applications with status",
             content = @Content(schema = @Schema(implementation = ClientApplicationsResponse.class))),
+        @APIResponse(responseCode = "400", description = "Invalid client ID format"),
         @APIResponse(responseCode = "404", description = "Client not found"),
         @APIResponse(responseCode = "401", description = "Not authenticated"),
         @APIResponse(responseCode = "403", description = "Insufficient permissions")
     })
-    public Response getClientApplications(@PathParam("id") String clientId) {
+    public Response getClientApplications(
+            @TypedIdParam(EntityType.CLIENT) @PathParam("id") String clientId) {
 
         String principalId = auditContext.requirePrincipalId();
         // Viewing client applications requires both client view and application view permissions
@@ -434,7 +454,7 @@ public class ClientAdminResource {
                     : app.website;
 
                 return new ClientApplicationDto(
-                    app.id,
+                    TypedId.Ops.serialize(EntityType.APPLICATION, app.id),
                     app.code,
                     app.name,
                     app.description,
@@ -459,13 +479,14 @@ public class ClientAdminResource {
     @Operation(summary = "Enable application for client")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Application enabled"),
+        @APIResponse(responseCode = "400", description = "Invalid ID format"),
         @APIResponse(responseCode = "404", description = "Client or application not found"),
         @APIResponse(responseCode = "401", description = "Not authenticated"),
         @APIResponse(responseCode = "403", description = "Insufficient permissions")
     })
     public Response enableApplicationForClient(
-            @PathParam("id") String clientId,
-            @PathParam("applicationId") String applicationId) {
+            @TypedIdParam(EntityType.CLIENT) @PathParam("id") String clientId,
+            @TypedIdParam(EntityType.APPLICATION) @PathParam("applicationId") String applicationId) {
 
         String principalId = auditContext.requirePrincipalId();
         // Enabling application for client requires both client update and application update
@@ -501,13 +522,14 @@ public class ClientAdminResource {
     @Operation(summary = "Disable application for client")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Application disabled"),
+        @APIResponse(responseCode = "400", description = "Invalid ID format"),
         @APIResponse(responseCode = "404", description = "Client or application not found"),
         @APIResponse(responseCode = "401", description = "Not authenticated"),
         @APIResponse(responseCode = "403", description = "Insufficient permissions")
     })
     public Response disableApplicationForClient(
-            @PathParam("id") String clientId,
-            @PathParam("applicationId") String applicationId) {
+            @TypedIdParam(EntityType.CLIENT) @PathParam("id") String clientId,
+            @TypedIdParam(EntityType.APPLICATION) @PathParam("applicationId") String applicationId) {
 
         String principalId = auditContext.requirePrincipalId();
         // Disabling application for client requires both client update and application update
@@ -544,12 +566,13 @@ public class ClientAdminResource {
     @Operation(summary = "Update applications for client", description = "Sets which applications are enabled for this client")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Applications updated"),
+        @APIResponse(responseCode = "400", description = "Invalid ID format"),
         @APIResponse(responseCode = "404", description = "Client not found"),
         @APIResponse(responseCode = "401", description = "Not authenticated"),
         @APIResponse(responseCode = "403", description = "Insufficient permissions")
     })
     public Response updateClientApplications(
-            @PathParam("id") String clientId,
+            @TypedIdParam(EntityType.CLIENT) @PathParam("id") String clientId,
             @Valid UpdateClientApplicationsRequest request) {
 
         String principalId = auditContext.requirePrincipalId();
@@ -565,7 +588,10 @@ public class ClientAdminResource {
                 .build();
         }
 
-        Set<String> enabledAppIds = Set.copyOf(request.enabledApplicationIds());
+        // Deserialize all application IDs from the request
+        Set<String> enabledAppIds = request.enabledApplicationIds().stream()
+            .map(id -> TypedId.Ops.deserialize(EntityType.APPLICATION, id))
+            .collect(Collectors.toSet());
 
         // Get all applications
         List<Application> allApps = applicationService.findAll();
@@ -596,7 +622,7 @@ public class ClientAdminResource {
 
     private ClientDto toDto(Client client) {
         return new ClientDto(
-            client.id != null ? client.id : null,
+            TypedId.Ops.serialize(EntityType.CLIENT, client.id),
             client.name,
             client.identifier,
             client.status,

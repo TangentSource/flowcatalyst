@@ -25,21 +25,21 @@ export interface NotificationConfig {
 	/** Email configuration */
 	email: {
 		enabled: boolean;
-		from?: string;
-		to?: string;
+		from?: string | undefined;
+		to?: string | undefined;
 		smtp: {
-			host?: string;
+			host?: string | undefined;
 			port: number;
 			secure: boolean;
-			username?: string;
-			password?: string;
+			username?: string | undefined;
+			password?: string | undefined;
 		};
 	};
 
 	/** Teams webhook configuration */
 	teams: {
 		enabled: boolean;
-		webhookUrl?: string;
+		webhookUrl?: string | undefined;
 	};
 }
 

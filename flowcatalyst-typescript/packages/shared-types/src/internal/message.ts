@@ -12,7 +12,7 @@ export const MessagePointerSchema = z.object({
 	/** Message group ID for FIFO ordering within a group */
 	messageGroupId: z.string(),
 	/** The actual message payload (opaque to router) */
-	payload: z.unknown(),
+	payload: z.unknown().optional(),
 	/** Optional auth token for downstream calls */
 	authToken: z.string().optional(),
 	/** Optional callback URL override */
@@ -21,7 +21,16 @@ export const MessagePointerSchema = z.object({
 	createdAt: z.string().optional(),
 });
 
-export type MessagePointer = z.infer<typeof MessagePointerSchema>;
+/** MessagePointer type with undefined-friendly optional props for exactOptionalPropertyTypes */
+export type MessagePointer = {
+	messageId: string;
+	poolCode: string;
+	messageGroupId: string;
+	payload?: unknown;
+	authToken?: string | undefined;
+	callbackUrl?: string | undefined;
+	createdAt?: string | undefined;
+};
 
 /**
  * Internal message representation with queue-specific metadata
@@ -69,6 +78,8 @@ export const ProcessingOutcome = {
 	ERROR_CONFIG: 'ERROR_CONFIG',
 	/** Processing error (5xx, timeout) - NACK for retry */
 	ERROR_PROCESS: 'ERROR_PROCESS',
+	/** Connection error - NACK for retry */
+	ERROR_CONNECTION: 'ERROR_CONNECTION',
 	/** Message deferred (ack=false response) - NACK with visibility */
 	DEFERRED: 'DEFERRED',
 	/** Batch+group already failed - NACK without processing */
@@ -88,4 +99,6 @@ export interface ProcessingResult {
 	statusCode?: number;
 	/** Processing duration in milliseconds */
 	durationMs: number;
+	/** Optional delay before retry (seconds) */
+	delaySeconds?: number;
 }

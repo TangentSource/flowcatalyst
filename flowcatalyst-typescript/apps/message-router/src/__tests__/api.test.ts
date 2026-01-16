@@ -50,7 +50,8 @@ describe('Message Router API', () => {
 			const res = await app.request('/api/config');
 			expect(res.status).toBe(200);
 
-			const body = await res.json();
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const body = (await res.json()) as any;
 			expect(body).toHaveProperty('queues');
 			expect(body).toHaveProperty('connections');
 			expect(body).toHaveProperty('processingPools');
@@ -147,7 +148,8 @@ describe('Message Router API', () => {
 			const res = await app.request('/api/test/fast', { method: 'POST' });
 			expect(res.status).toBe(200);
 
-			const body = await res.json();
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const body = (await res.json()) as any;
 			expect(body.status).toBe('success');
 			expect(body.endpoint).toBe('fast');
 			expect(body).toHaveProperty('requestId');
@@ -157,7 +159,8 @@ describe('Message Router API', () => {
 			const res = await app.request('/api/test/fail', { method: 'POST' });
 			expect(res.status).toBe(500);
 
-			const body = await res.json();
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const body = (await res.json()) as any;
 			expect(body.status).toBe('error');
 			expect(body.endpoint).toBe('fail');
 		});
@@ -166,7 +169,8 @@ describe('Message Router API', () => {
 			const res = await app.request('/api/test/success', { method: 'POST' });
 			expect(res.status).toBe(200);
 
-			const body = await res.json();
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const body = (await res.json()) as any;
 			expect(body).toHaveProperty('ack');
 			expect(body.ack).toBe(true);
 			expect(body).toHaveProperty('message');
@@ -176,7 +180,8 @@ describe('Message Router API', () => {
 			const res = await app.request('/api/test/pending', { method: 'POST' });
 			expect(res.status).toBe(200);
 
-			const body = await res.json();
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const body = (await res.json()) as any;
 			expect(body.ack).toBe(false);
 			expect(body.message).toBe('notBefore time not reached');
 		});
@@ -185,7 +190,8 @@ describe('Message Router API', () => {
 			const res = await app.request('/api/test/stats');
 			expect(res.status).toBe(200);
 
-			const body = await res.json();
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const body = (await res.json()) as any;
 			expect(body).toHaveProperty('totalRequests');
 			expect(typeof body.totalRequests).toBe('number');
 		});

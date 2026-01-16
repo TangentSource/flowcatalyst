@@ -34,11 +34,22 @@ public class ClientService {
      * Create a new client.
      *
      * @param name Client display name
-     * @param identifier Unique client identifier/slug (e.g., "acme-corp")
+     * @param identifier Unique client identifier/slug (e.g., "acme-corp"). Max 60 chars, lowercase, hyphens/underscores allowed.
      * @return Created client
-     * @throws BadRequestException if identifier already exists
+     * @throws BadRequestException if identifier already exists or is invalid
      */
     public Client createClient(String name, String identifier) {
+        // Validate identifier format
+        if (identifier == null || identifier.isBlank()) {
+            throw new BadRequestException("Client identifier is required");
+        }
+        if (identifier.length() > 60) {
+            throw new BadRequestException("Client identifier must be 60 characters or less");
+        }
+        if (!identifier.matches("^[a-z][a-z0-9_-]*$")) {
+            throw new BadRequestException("Client identifier must be lowercase, start with a letter, and contain only letters, numbers, hyphens, and underscores");
+        }
+
         // Validate identifier uniqueness
         if (clientRepo.findByIdentifier(identifier).isPresent()) {
             throw new BadRequestException("Client identifier already exists: " + identifier);

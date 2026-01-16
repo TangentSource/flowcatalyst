@@ -4,6 +4,8 @@ import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
 import jakarta.enterprise.context.ApplicationScoped;
 
+import java.util.Optional;
+
 /**
  * Configuration for traffic management strategies.
  *
@@ -23,8 +25,36 @@ public interface TrafficManagementConfig {
 
     /**
      * Traffic management strategy to use.
-     * Options: noop
+     * Options: noop, aws-alb
      */
     @WithDefault("noop")
     String strategy();
+
+    // AWS ALB Configuration
+
+    /**
+     * AWS ALB target group ARN.
+     * Required when strategy is "aws-alb".
+     */
+    Optional<String> albTargetGroupArn();
+
+    /**
+     * Target ID for ALB registration (typically EC2 instance ID or IP address).
+     * Required when strategy is "aws-alb".
+     */
+    Optional<String> albTargetId();
+
+    /**
+     * Target port for ALB registration.
+     * Defaults to 8080.
+     */
+    @WithDefault("8080")
+    int albTargetPort();
+
+    /**
+     * Deregistration delay in seconds (connection draining timeout).
+     * Defaults to 300 seconds (5 minutes).
+     */
+    @WithDefault("300")
+    int albDeregistrationDelaySeconds();
 }

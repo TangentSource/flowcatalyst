@@ -19,10 +19,12 @@ export interface EmailNotificationConfig {
 		host: string;
 		port: number;
 		secure: boolean;
-		auth?: {
-			user: string;
-			pass: string;
-		};
+		auth?:
+			| {
+					user: string;
+					pass: string;
+			  }
+			| undefined;
 	};
 	instanceId: string;
 }
@@ -168,10 +170,10 @@ export class EmailNotificationService implements NotificationService {
 	private formatBatchHtml(warnings: WarningNotification[]): string {
 		const groupedByCategory = warnings.reduce(
 			(acc, warning) => {
-				if (!acc[warning.category]) {
-					acc[warning.category] = [];
-				}
-				acc[warning.category].push(warning);
+				const category = warning.category;
+				const existing = acc[category] ?? [];
+				existing.push(warning);
+				acc[category] = existing;
 				return acc;
 			},
 			{} as Record<string, WarningNotification[]>,

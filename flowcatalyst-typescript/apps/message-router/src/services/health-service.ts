@@ -1,7 +1,9 @@
 import type { Logger } from '@flowcatalyst/logging';
 import type { MonitoringHealthResponse } from '@flowcatalyst/shared-types';
+import type { CircuitBreakerManager } from '@flowcatalyst/queue-core';
 import type { QueueManagerService } from './queue-manager-service.js';
 import type { WarningService } from './warning-service.js';
+import type { BrokerHealthService } from '../health/index.js';
 
 /**
  * Simple health check result
@@ -17,6 +19,8 @@ export interface HealthCheckResult {
 export class HealthService {
 	private readonly queueManager: QueueManagerService;
 	private readonly warnings: WarningService;
+	private readonly brokerHealth: BrokerHealthService;
+	private readonly circuitBreakers: CircuitBreakerManager;
 	private readonly logger: Logger;
 	private readonly startTime: number;
 	private started = false;
@@ -24,10 +28,14 @@ export class HealthService {
 	constructor(
 		queueManager: QueueManagerService,
 		warnings: WarningService,
+		brokerHealth: BrokerHealthService,
+		circuitBreakers: CircuitBreakerManager,
 		logger: Logger,
 	) {
 		this.queueManager = queueManager;
 		this.warnings = warnings;
+		this.brokerHealth = brokerHealth;
+		this.circuitBreakers = circuitBreakers;
 		this.logger = logger.child({ component: 'HealthService' });
 		this.startTime = Date.now();
 
@@ -49,8 +57,9 @@ export class HealthService {
 
 	/**
 	 * Readiness check - is the service ready to accept traffic?
+	 * Includes broker connectivity check for external dependencies.
 	 */
-	getReadiness(): HealthCheckResult {
+	async getReadiness(): Promise<HealthCheckResult> {
 		const issues: string[] = [];
 
 		if (!this.started) {
@@ -61,6 +70,19 @@ export class HealthService {
 		if (!this.queueManager.isRunning()) {
 			issues.push('Queue manager not running');
 		}
+
+		// Check broker connectivity (SQS/ActiveMQ/NATS) using neverthrow
+		const brokerResult = await this.brokerHealth.checkBrokerConnectivity();
+		brokerResult.match(
+			(result) => {
+				if (!result.healthy) {
+					issues.push(result.details || `${result.broker} broker is not accessible`);
+				}
+			},
+			(error) => {
+				issues.push(`Broker health check failed: ${error.type} - ${error.broker}`);
+			},
+		);
 
 		return {
 			healthy: issues.length === 0,
@@ -101,6 +123,15 @@ export class HealthService {
 			(w) => !w.acknowledged && w.severity === 'CRITICAL',
 		).length;
 
+		// Count open circuit breakers
+		const allBreakers = this.circuitBreakers.getAll();
+		let circuitBreakersOpen = 0;
+		for (const breaker of allBreakers.values()) {
+			if (breaker.getState() === 'OPEN') {
+				circuitBreakersOpen++;
+			}
+		}
+
 		// Determine overall status
 		let status = 'HEALTHY';
 		let degradationReason: string | null = null;
@@ -108,6 +139,9 @@ export class HealthService {
 		if (criticalWarnings > 0) {
 			status = 'DEGRADED';
 			degradationReason = `${criticalWarnings} critical warnings`;
+		} else if (circuitBreakersOpen > 0) {
+			status = 'DEGRADED';
+			degradationReason = `${circuitBreakersOpen} circuit breakers open`;
 		} else if (activeWarnings > 5) {
 			status = 'WARNING';
 			degradationReason = `${activeWarnings} active warnings`;
@@ -130,7 +164,7 @@ export class HealthService {
 				healthyPools,
 				activeWarnings,
 				criticalWarnings,
-				circuitBreakersOpen: 0, // TODO: Track from circuit breaker manager
+				circuitBreakersOpen,
 				degradationReason,
 			},
 		};

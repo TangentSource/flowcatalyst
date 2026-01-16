@@ -33,6 +33,8 @@ import tech.flowcatalyst.serviceaccount.operations.regeneratesigningsecret.Regen
 import tech.flowcatalyst.serviceaccount.operations.updateserviceaccount.ServiceAccountUpdated;
 import tech.flowcatalyst.serviceaccount.operations.updateserviceaccount.UpdateServiceAccountCommand;
 import tech.flowcatalyst.serviceaccount.repository.ServiceAccountFilter;
+import tech.flowcatalyst.platform.shared.EntityType;
+import tech.flowcatalyst.platform.shared.TypedId;
 
 import java.time.Instant;
 import java.util.List;
@@ -314,12 +316,16 @@ public class ServiceAccountAdminResource {
 
     private ServiceAccountDto toDto(ServiceAccount sa) {
         return new ServiceAccountDto(
-            sa.id,
+            TypedId.Ops.serialize(EntityType.PRINCIPAL, sa.id),
             sa.code,
             sa.name,
             sa.description,
-            sa.clientIds != null ? sa.clientIds : List.of(),
-            sa.applicationId,
+            sa.clientIds != null
+                ? sa.clientIds.stream()
+                    .map(id -> TypedId.Ops.serialize(EntityType.CLIENT, id))
+                    .toList()
+                : List.of(),
+            TypedId.Ops.serialize(EntityType.APPLICATION, sa.applicationId),
             sa.active,
             sa.webhookCredentials != null ? sa.webhookCredentials.authType : null,
             sa.roles.stream().map(r -> r.roleName).toList(),

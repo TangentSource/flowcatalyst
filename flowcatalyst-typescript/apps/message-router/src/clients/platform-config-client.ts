@@ -8,7 +8,7 @@ export interface PlatformConfigClientOptions {
 	/** Platform API base URL */
 	baseUrl: string;
 	/** Optional API key for authentication */
-	apiKey?: string;
+	apiKey?: string | undefined;
 	/** Connection timeout in milliseconds */
 	connectTimeoutMs: number;
 	/** Read timeout in milliseconds */

@@ -97,3 +97,128 @@ db.collection.find({ createdAt: { $type: "string" } }).forEach(function(doc) {
 - **Preferred**: Write a migration script to convert incorrect field types
 - **Alternative**: Ask user if they want to drop the affected collection
 - **Never**: Silently drop collections/databases as a "quick fix"
+
+## TypeScript Error Handling - neverthrow
+
+**IMPORTANT**: Use `neverthrow` for typed error handling in TypeScript code. Do not use try/catch with untyped exceptions for business logic.
+
+### Why neverthrow
+- TypeScript exceptions are untyped - `catch (e)` gives you `unknown`
+- Result types make error paths explicit in function signatures
+- Forces callers to handle errors - can't accidentally ignore them
+- Composable with `map`, `mapErr`, `andThen` for clean pipelines
+
+### Basic Patterns
+```typescript
+import { ok, err, Result, ResultAsync } from 'neverthrow';
+
+// Define typed errors
+type ValidationError = { type: 'validation'; field: string; message: string };
+type NotFoundError = { type: 'not_found'; id: string };
+type NetworkError = { type: 'network'; cause: Error };
+
+// Synchronous functions return Result<T, E>
+function parseConfig(json: string): Result<Config, ValidationError> {
+  const parsed = JSON.parse(json);
+  if (!parsed.name) {
+    return err({ type: 'validation', field: 'name', message: 'required' });
+  }
+  return ok(parsed as Config);
+}
+
+// Async functions return ResultAsync<T, E>
+function fetchUser(id: string): ResultAsync<User, NotFoundError | NetworkError> {
+  return ResultAsync.fromPromise(
+    fetch(`/users/${id}`).then(r => r.json()),
+    (e) => ({ type: 'network', cause: e as Error })
+  ).andThen((data) =>
+    data ? ok(data) : err({ type: 'not_found', id })
+  );
+}
+
+// Handling results
+const result = await fetchUser('123');
+
+// Pattern 1: match
+result.match(
+  (user) => console.log(user.name),
+  (error) => {
+    if (error.type === 'not_found') console.log('User not found');
+    else console.log('Network error', error.cause);
+  }
+);
+
+// Pattern 2: isOk/isErr guards
+if (result.isOk()) {
+  console.log(result.value.name);  // TypeScript knows it's User
+}
+
+// Pattern 3: unwrapOr for defaults
+const user = result.unwrapOr(defaultUser);
+```
+
+### Wrapping External Libraries
+```typescript
+// Wrap throwing functions with fromThrowable
+import { fromThrowable } from 'neverthrow';
+
+const safeJsonParse = fromThrowable(
+  JSON.parse,
+  (e) => ({ type: 'parse_error' as const, cause: e })
+);
+
+// Wrap promises with ResultAsync.fromPromise
+function safeFetch(url: string): ResultAsync<Response, NetworkError> {
+  return ResultAsync.fromPromise(
+    fetch(url),
+    (e) => ({ type: 'network', cause: e as Error })
+  );
+}
+```
+
+### Combining Results
+```typescript
+import { Result, ResultAsync, combine, combineWithAllErrors } from 'neverthrow';
+
+// combine - fails fast on first error
+const results: Result<number, string>[] = [ok(1), ok(2), ok(3)];
+const combined = combine(results);  // Result<number[], string>
+
+// combineWithAllErrors - collects all errors
+const allResults = combineWithAllErrors(results);  // Result<number[], string[]>
+
+// Chaining with andThen
+fetchUser(id)
+  .andThen((user) => fetchOrders(user.id))
+  .andThen((orders) => calculateTotal(orders))
+  .mapErr((e) => ({ ...e, context: 'order_total' }));
+```
+
+### Message Router Error Types
+For the message-router, use these standard error types:
+```typescript
+// Domain errors
+type MediationError =
+  | { type: 'circuit_open'; name: string }
+  | { type: 'timeout'; durationMs: number }
+  | { type: 'http_error'; status: number; body?: string }
+  | { type: 'network'; cause: Error };
+
+type ProcessingError =
+  | { type: 'parse_error'; message: string }
+  | { type: 'validation'; field: string }
+  | { type: 'rate_limited'; retryAfterMs: number }
+  | { type: 'pool_full'; poolCode: string };
+
+type HealthCheckError =
+  | { type: 'broker_unreachable'; broker: string; cause: Error }
+  | { type: 'queue_not_found'; queueUrl: string }
+  | { type: 'auth_failed'; broker: string };
+```
+
+### Rules
+1. **Business logic**: Always use Result/ResultAsync
+2. **Infrastructure boundaries**: Wrap with fromPromise/fromThrowable
+3. **Error types**: Define discriminated unions with `type` field
+4. **Never throw**: Convert exceptions at boundaries, propagate as Result
+5. **Logging**: Log errors at handling site, not at creation site

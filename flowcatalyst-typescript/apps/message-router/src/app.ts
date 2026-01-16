@@ -6,6 +6,7 @@ import { monitoringRoutes } from './api/monitoring.js';
 import { testRoutes } from './api/test.js';
 import { seedRoutes } from './api/seed.js';
 import { metricsRoutes } from './api/metrics.js';
+import { benchmarkRoutes } from './api/benchmark.js';
 import { createServices, type Services } from './services/index.js';
 import { createAuthMiddleware, type AuthConfig, type AuthUser } from './security/index.js';
 import { env } from './env.js';
@@ -106,6 +107,7 @@ export function createApp(logger: Logger) {
 	app.route('/api/config', configRoutes);
 	app.route('/api/test', testRoutes);
 	app.route('/api/seed', seedRoutes);
+	app.route('/api/benchmark', benchmarkRoutes);
 	app.route('/monitoring', monitoringRoutes);
 
 	// OpenAPI documentation

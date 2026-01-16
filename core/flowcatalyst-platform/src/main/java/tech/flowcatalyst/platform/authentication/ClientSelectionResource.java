@@ -15,6 +15,8 @@ import tech.flowcatalyst.platform.principal.PrincipalRepository;
 import tech.flowcatalyst.platform.client.Client;
 import tech.flowcatalyst.platform.client.ClientAccessService;
 import tech.flowcatalyst.platform.client.ClientRepository;
+import tech.flowcatalyst.platform.shared.EntityType;
+import tech.flowcatalyst.platform.shared.TypedId;
 
 import java.util.List;
 import java.util.Set;
@@ -95,7 +97,10 @@ public class ClientSelectionResource {
 
         // Load client details
         List<ClientInfo> clients = clientRepo.findByIds(clientIds).stream()
-            .map(c -> new ClientInfo(c.id, c.name, c.identifier))
+            .map(c -> new ClientInfo(
+                TypedId.Ops.serialize(EntityType.CLIENT, c.id),
+                c.name,
+                c.identifier))
             .toList();
 
         // Determine if user has global access
@@ -103,7 +108,7 @@ public class ClientSelectionResource {
 
         return Response.ok(new AccessibleClientsResponse(
             clients,
-            principal.clientId,
+            TypedId.Ops.serialize(EntityType.CLIENT, principal.clientId),
             globalAccess
         )).build();
     }
@@ -146,18 +151,21 @@ public class ClientSelectionResource {
                 .build();
         }
 
+        // Deserialize typed client ID
+        String internalClientId = TypedId.Ops.deserialize(EntityType.CLIENT, request.clientId());
+
         // Verify access to requested client
         Set<String> accessibleClients = clientAccessService.getAccessibleClients(principal);
-        if (!accessibleClients.contains(request.clientId())) {
+        if (!accessibleClients.contains(internalClientId)) {
             LOG.warnf("Principal %s attempted to switch to unauthorized client %s",
-                principalId, request.clientId());
+                principalId, internalClientId);
             return Response.status(Response.Status.FORBIDDEN)
                 .entity(new ErrorResponse("Access denied to client"))
                 .build();
         }
 
         // Get client info
-        Client client = clientRepo.findByIdOptional(request.clientId())
+        Client client = clientRepo.findByIdOptional(internalClientId)
             .orElse(null);
 
         if (client == null) {
@@ -171,13 +179,13 @@ public class ClientSelectionResource {
 
         Set<String> permissions = permissionRegistry.getPermissionsForRoles(roles);
 
-        // Issue new token with client context
+        // Issue new token with client context (uses internal ID)
         String newToken = jwtKeyService.issueSessionTokenWithClient(
             principalId,
             principal.userIdentity != null ? principal.userIdentity.email : null,
             roles,
             permissions,
-            request.clientId()
+            internalClientId
         );
 
         LOG.infof("Principal %s switched to client %s (%s)",
@@ -186,7 +194,10 @@ public class ClientSelectionResource {
         // Build response with optional cookie
         Response.ResponseBuilder response = Response.ok(new SwitchClientResponse(
             newToken,
-            new ClientInfo(client.id, client.name, client.identifier),
+            new ClientInfo(
+                TypedId.Ops.serialize(EntityType.CLIENT, client.id),
+                client.name,
+                client.identifier),
             roles,
             permissions
         ));
@@ -246,7 +257,10 @@ public class ClientSelectionResource {
         if (currentClientId != null) {
             Client client = clientRepo.findByIdOptional(currentClientId).orElse(null);
             if (client != null) {
-                clientInfo = new ClientInfo(client.id, client.name, client.identifier);
+                clientInfo = new ClientInfo(
+                    TypedId.Ops.serialize(EntityType.CLIENT, client.id),
+                    client.name,
+                    client.identifier);
             }
         }
 

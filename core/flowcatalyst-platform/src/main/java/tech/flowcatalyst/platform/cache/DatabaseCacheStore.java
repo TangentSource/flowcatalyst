@@ -1,5 +1,6 @@
 package tech.flowcatalyst.platform.cache;
 
+import jakarta.enterprise.inject.Typed;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.jdbi.v3.core.Jdbi;
@@ -14,8 +15,12 @@ import java.util.Optional;
  * <p>Simple distributed caching without requiring Redis.
  * Good for multi-instance deployments where Redis isn't available.
  * Automatic cleanup of expired entries on read.
+ *
+ * <p>Note: @Typed excludes CacheStore from bean types so only the
+ * CacheStoreProducer can provide the CacheStore interface.
  */
 @Singleton
+@Typed(DatabaseCacheStore.class)
 public class DatabaseCacheStore implements CacheStore {
 
     @Inject

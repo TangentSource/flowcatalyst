@@ -21,6 +21,8 @@ import tech.flowcatalyst.platform.authorization.AuthorizationService;
 import tech.flowcatalyst.platform.authorization.platform.PlatformMessagingPermissions;
 import tech.flowcatalyst.platform.client.Client;
 import tech.flowcatalyst.platform.client.ClientRepository;
+import tech.flowcatalyst.platform.shared.EntityType;
+import tech.flowcatalyst.platform.shared.TypedId;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -140,7 +142,9 @@ public class DispatchJobBffResource {
             clientsById.putIfAbsent(c.id, c);
         }
         clientsById.values().stream()
-            .map(c -> new FilterOption(c.id, c.name != null ? c.name : c.identifier))
+            .map(c -> new FilterOption(
+                TypedId.Ops.serialize(EntityType.CLIENT, c.id),
+                c.name != null ? c.name : c.identifier))
             .sorted((a, b) -> a.label().compareToIgnoreCase(b.label()))
             .forEach(clientOptionsList::add);
 

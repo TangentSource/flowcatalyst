@@ -1,5 +1,6 @@
 package tech.flowcatalyst.messagerouter.traffic;
 
+import io.quarkus.arc.Arc;
 import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
@@ -47,6 +48,23 @@ public class TrafficManagementService {
             case "noop":
                 activeStrategy = noOpStrategy;
                 LOG.info("Using no-op traffic strategy");
+                break;
+
+            case "aws-alb":
+                // Validate required configuration
+                if (config.albTargetGroupArn().isEmpty()) {
+                    LOG.severe("AWS ALB strategy requires traffic-management.alb-target-group-arn to be configured");
+                    activeStrategy = noOpStrategy;
+                    break;
+                }
+                if (config.albTargetId().isEmpty()) {
+                    LOG.severe("AWS ALB strategy requires traffic-management.alb-target-id to be configured");
+                    activeStrategy = noOpStrategy;
+                    break;
+                }
+                // Get the ALB strategy bean from CDI container
+                activeStrategy = Arc.container().instance(AwsAlbTrafficStrategy.class).get();
+                LOG.info("Using AWS ALB traffic strategy with target group: " + config.albTargetGroupArn().get());
                 break;
 
             default:

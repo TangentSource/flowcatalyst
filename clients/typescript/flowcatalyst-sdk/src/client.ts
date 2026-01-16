@@ -5,7 +5,8 @@ import type {
   DispatchJob,
   Client,
   Application,
-  ApiResponse
+  ApiResponse,
+  ListResponse
 } from './types'
 
 /**
@@ -71,8 +72,8 @@ export class FlowCatalystClient {
   /**
    * Clients API
    */
-  async getClients(): Promise<ApiResponse<Client[]>> {
-    return this.request<Client[]>('/api/clients')
+  async getClients(): Promise<ApiResponse<ListResponse<Client>>> {
+    return this.request<ListResponse<Client>>('/api/clients')
   }
 
   async getClient(id: string): Promise<ApiResponse<Client>> {
@@ -82,8 +83,8 @@ export class FlowCatalystClient {
   /**
    * Applications API
    */
-  async getClientApplications(clientId: string): Promise<ApiResponse<Application[]>> {
-    return this.request<Application[]>(`/api/clients/${clientId}/applications`)
+  async getClientApplications(clientId: string): Promise<ApiResponse<ListResponse<Application>>> {
+    return this.request<ListResponse<Application>>(`/api/clients/${clientId}/applications`)
   }
 
   /**

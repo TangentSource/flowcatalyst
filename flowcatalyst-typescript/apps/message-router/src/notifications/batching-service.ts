@@ -195,6 +195,8 @@ export class BatchingNotificationService implements NotificationService {
 		// If only one warning, send as individual notification
 		if (deduplicated.length === 1) {
 			const warning = deduplicated[0];
+			if (!warning) return; // Type guard
+
 			const promises: Promise<void>[] = [];
 
 			if (this.emailService?.isEnabled()) {

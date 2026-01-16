@@ -2,6 +2,22 @@ import stompit from 'stompit';
 import type { Logger } from '@flowcatalyst/logging';
 import { randomUUID } from 'node:crypto';
 
+// Local type declarations for stompit (the @types/stompit package is incomplete)
+declare module 'stompit' {
+	interface ChannelPoolOptions {
+		minChannels?: number;
+		maxChannels?: number;
+		requestTimeout?: number;
+	}
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type StompitSubscription = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type StompitSubscribeOptions = Record<string, string>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type StompitMessage = any;
+
 /**
  * Message received from ActiveMQ
  */
@@ -88,7 +104,7 @@ export class ActiveMqConsumer {
 	private lastPollTimeMs = 0;
 	private connectionManager: stompit.ConnectFailover | null = null;
 	private channelPool: stompit.ChannelPool | null = null;
-	private subscriptions: stompit.Client.Subscription[] = [];
+	private subscriptions: StompitSubscription[] = [];
 
 	private metrics = {
 		pendingMessages: 0,
@@ -157,7 +173,7 @@ export class ActiveMqConsumer {
 			minChannels: 1,
 			maxChannels: this.config.connections,
 			requestTimeout: 30000,
-		});
+		} as stompit.ChannelPoolOptions);
 
 		// Start consumers
 		for (let i = 0; i < this.config.connections; i++) {
@@ -207,7 +223,8 @@ export class ActiveMqConsumer {
 	private startConsumer(consumerId: number): void {
 		if (!this.channelPool || !this.running) return;
 
-		this.channelPool.channel((error, channel, done) => {
+		// @ts-expect-error - stompit types are incomplete, callback has 3 params
+		this.channelPool.channel((error: Error | null, channel: stompit.Channel, done: () => void) => {
 			if (error) {
 				this.logger.error({ err: error, consumerId }, 'Error getting channel');
 				// Retry after delay
@@ -217,7 +234,7 @@ export class ActiveMqConsumer {
 				return;
 			}
 
-			const subscribeHeaders: stompit.Client.SubscribeOptions = {
+			const subscribeHeaders: StompitSubscribeOptions = {
 				destination: `/queue/${this.config.queueName}`,
 				ack: 'client-individual', // Individual acknowledgment
 				'activemq.prefetchSize': String(this.config.prefetchCount),
@@ -225,7 +242,7 @@ export class ActiveMqConsumer {
 
 			const subscription = channel.subscribe(
 				subscribeHeaders,
-				(subscribeError, message, rawSubscription) => {
+				(subscribeError: Error | null, message: StompitMessage, rawSubscription: StompitSubscription) => {
 					if (subscribeError) {
 						this.logger.error({ err: subscribeError, consumerId }, 'Subscribe error');
 						done();
@@ -265,11 +282,11 @@ export class ActiveMqConsumer {
 	 */
 	private async handleMessage(
 		channel: stompit.Channel,
-		message: stompit.Client.Message,
+		message: StompitMessage,
 		body: string,
 		consumerId: number,
 	): Promise<void> {
-		const headers = message.headers as Record<string, string>;
+		const headers = (message.headers ?? {}) as Record<string, string>;
 		const brokerMessageId = headers['message-id'] || randomUUID();
 		const messageId = headers['correlation-id'] || brokerMessageId;
 		const redelivered = headers['redelivered'] === 'true';

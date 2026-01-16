@@ -2,6 +2,7 @@ package tech.flowcatalyst.platform.cache;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import jakarta.enterprise.inject.Typed;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 
@@ -15,8 +16,12 @@ import java.util.concurrent.ConcurrentMap;
  *
  * <p>Fast, single-node caching. Not shared across multiple instances.
  * Good for development and single-server deployments.
+ *
+ * <p>Note: @Typed excludes CacheStore from bean types so only the
+ * CacheStoreProducer can provide the CacheStore interface.
  */
 @Singleton
+@Typed(InMemoryCacheStore.class)
 public class InMemoryCacheStore implements CacheStore {
 
     @Inject
