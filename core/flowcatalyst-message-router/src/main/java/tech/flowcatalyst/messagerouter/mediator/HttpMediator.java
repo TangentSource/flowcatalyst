@@ -17,6 +17,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -81,33 +82,50 @@ public class HttpMediator implements Mediator {
     public MediationOutcome process(MessagePointer message) {
         final int maxRetries = 3;
         final long retryDelayMs = 1000;
+        MediationError lastError = null;
 
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            MediationOutcome outcome = attemptProcess(message);
+
+            // If successful or a permanent error (config error), return immediately
+            if (outcome.result() == tech.flowcatalyst.messagerouter.model.MediationResult.SUCCESS ||
+                outcome.result() == tech.flowcatalyst.messagerouter.model.MediationResult.ERROR_CONFIG) {
+                return outcome;
+            }
+
+            // For retryable errors, check if we should retry
+            lastError = outcome.error();
+            boolean shouldRetry = lastError != null && lastError.isRetryable();
+
+            if (!shouldRetry || attempt == maxRetries) {
+                // All retries exhausted or non-retryable error
+                if (attempt == maxRetries && shouldRetry) {
+                    LOG.warnf("Message [%s] failed after %d attempts: %s - returning with error",
+                        message.id(), maxRetries, lastError != null ? lastError.message() : "unknown");
+                }
+                return outcome;
+            }
+
+            // Retry with backoff
+            long delayMs = retryDelayMs * attempt; // Simple backoff: 1s, 2s, 3s
+            LOG.debugf("Message [%s] attempt %d failed (%s), retrying in %dms",
+                message.id(), attempt, lastError != null ? lastError.message() : "unknown", delayMs);
             try {
-                return attemptProcess(message);
-            } catch (RetryableException e) {
-                if (attempt == maxRetries) {
-                    // All retries exhausted, NACK for visibility timeout retry
-                    LOG.warnf(e, "Message [%s] failed after %d attempts: %s - returning ERROR_PROCESS",
-                        message.id(), maxRetries, e.getMessage());
-                    return MediationOutcome.errorProcess(null);
-                }
-                // Retry with backoff
-                long delayMs = retryDelayMs * attempt; // Simple backoff: 1s, 2s, 3s
-                LOG.debugf("Message [%s] attempt %d failed, retrying in %dms", message.id(), attempt, delayMs);
-                try {
-                    Thread.sleep(delayMs);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    LOG.warnf("Interrupted while retrying message: %s", message.id());
-                    return MediationOutcome.errorProcess(null);
-                }
+                Thread.sleep(delayMs);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                LOG.warnf("Interrupted while retrying message: %s", message.id());
+                return MediationOutcome.errorProcess(
+                    new MediationError.NetworkError(ie)
+                );
             }
         }
-        return MediationOutcome.errorProcess(null); // Should not reach here
+
+        // Should not reach here, but return last error if we do
+        return MediationOutcome.errorProcess(lastError);
     }
 
-    private MediationOutcome attemptProcess(MessagePointer message) throws RetryableException {
+    private MediationOutcome attemptProcess(MessagePointer message) {
         try {
             String payload = String.format("{\"messageId\":\"%s\"}", message.id());
             LOG.infof("HttpMediator: Attempting to process message [%s] via HTTP POST to [%s]",
@@ -191,12 +209,16 @@ public class HttpMediator implements Mediator {
                         message.id(), message.mediationTarget()),
                     "HttpMediator"
                 );
-                return MediationOutcome.errorConfig();
+                return MediationOutcome.errorConfig(
+                    new MediationError.HttpError(statusCode, response.body())
+                );
             } else if (statusCode >= 500) {
                 // 5xx Server errors (except 501) - transient infrastructure issues
                 // Let SQS visibility timeout handle retries rather than quick retries
                 LOG.warnf("Message [%s] failed with server error: %d - will be retried via queue visibility timeout", message.id(), statusCode);
-                return MediationOutcome.errorProcess(null);
+                return MediationOutcome.errorProcess(
+                    new MediationError.HttpError(statusCode, response.body())
+                );
             } else if (statusCode == 400) {
                 // 400 Bad Request - permanent configuration/data error, ACK to prevent retry
                 // Extract reason from response body if available
@@ -210,7 +232,9 @@ public class HttpMediator implements Mediator {
                         message.id(), reason, message.mediationTarget()),
                     "HttpMediator"
                 );
-                return MediationOutcome.errorConfig();
+                return MediationOutcome.errorConfig(
+                    new MediationError.HttpError(statusCode, response.body())
+                );
             } else if (statusCode == 404) {
                 // 404 Not Found - configuration error (endpoint doesn't exist at this URL)
                 LOG.errorf("Message [%s] failed with 404 Not Found - configuration error: endpoint not found", message.id());
@@ -221,7 +245,9 @@ public class HttpMediator implements Mediator {
                         message.id(), message.mediationTarget()),
                     "HttpMediator"
                 );
-                return MediationOutcome.errorConfig();
+                return MediationOutcome.errorConfig(
+                    new MediationError.HttpError(statusCode, response.body())
+                );
             } else if (statusCode == 429) {
                 // 429 Too Many Requests - rate limiting from target endpoint, NACK for retry
                 // This is a transient error, not a configuration error
@@ -235,7 +261,10 @@ public class HttpMediator implements Mediator {
                     LOG.warnf("Message [%s] received 429 Too Many Requests (no Retry-After header) - will NACK and retry in %ds",
                         message.id(), retryAfterSeconds);
                 }
-                return MediationOutcome.errorProcess(retryAfterSeconds);
+                return MediationOutcome.errorProcess(
+                    retryAfterSeconds,
+                    new MediationError.RateLimited(Duration.ofSeconds(retryAfterSeconds))
+                );
             } else if (statusCode >= 401 && statusCode < 500) {
                 // All other 4xx errors indicate configuration problems:
                 // 401 Unauthorized, 403 Forbidden, 405 Method Not Allowed, etc.
@@ -251,26 +280,38 @@ public class HttpMediator implements Mediator {
                         message.id(), statusCode, getStatusDescription(statusCode), reason, message.mediationTarget()),
                     "HttpMediator"
                 );
-                return MediationOutcome.errorConfig();
+                return MediationOutcome.errorConfig(
+                    new MediationError.HttpError(statusCode, response.body())
+                );
             } else {
                 LOG.warnf("Message [%s] received unexpected status: %d - will be retried via queue visibility timeout", message.id(), statusCode);
-                return MediationOutcome.errorProcess(null);
+                return MediationOutcome.errorProcess(
+                    new MediationError.HttpError(statusCode, response.body())
+                );
             }
 
         } catch (java.net.http.HttpConnectTimeoutException | java.net.ConnectException | java.nio.channels.UnresolvedAddressException e) {
             LOG.errorf(e, "Connection error processing message: %s", message.id());
-            throw new RetryableException("Connection error", e);
+            return MediationOutcome.errorConnection(
+                new MediationError.NetworkError(e)
+            );
         } catch (java.net.http.HttpTimeoutException e) {
             LOG.errorf(e, "Timeout processing message: %s", message.id());
-            throw new RetryableException("HTTP timeout", e);
+            return MediationOutcome.errorProcess(
+                new MediationError.Timeout(Duration.ofMillis(timeoutMillis))
+            );
         } catch (java.io.IOException e) {
             // Catch other IO errors (like UnresolvedAddressException wrapped in IOException)
             LOG.errorf(e, "IO error processing message: %s", message.id());
-            throw new RetryableException("IO error", e);
+            return MediationOutcome.errorConnection(
+                new MediationError.NetworkError(e)
+            );
         } catch (Exception e) {
             LOG.errorf(e, "Unexpected error processing message: %s", message.id());
             // Treat unexpected errors as transient - safer to retry than drop messages
-            return MediationOutcome.errorProcess(null);
+            return MediationOutcome.errorProcess(
+                new MediationError.NetworkError(e)
+            );
         }
     }
 
@@ -362,15 +403,4 @@ public class HttpMediator implements Mediator {
         return responseBody != null && !responseBody.isEmpty() ? responseBody : "Unknown error";
     }
 
-    /**
-     * Exception thrown for transient errors (502+, connection errors) that should trigger quick retries
-     */
-    private static class RetryableException extends Exception {
-        RetryableException(String message) {
-            super(message);
-        }
-        RetryableException(String message, Throwable cause) {
-            super(message, cause);
-        }
-    }
 }

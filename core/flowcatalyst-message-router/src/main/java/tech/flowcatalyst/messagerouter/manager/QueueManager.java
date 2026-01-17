@@ -89,16 +89,15 @@ public class QueueManager implements MessageCallback {
         return standbyServiceInstance.isResolvable() ? standbyServiceInstance.get() : null;
     }
 
-    // Key: SQS MessageId (not application message ID) - ensures correct deduplication
+    // Consolidated in-flight message tracking - replaces 5 separate maps
+    private final InFlightMessageTracker inFlightTracker = new InFlightMessageTracker();
+
+    // Legacy reference to inPipelineMap for ProcessPoolImpl compatibility
+    // TODO: Update ProcessPoolImpl to not require this map reference
     private final ConcurrentHashMap<String, MessagePointer> inPipelineMap = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, Long> inPipelineTimestamps = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, String> inPipelineQueueIds = new ConcurrentHashMap<>();
-    // Track application message IDs separately for requeued message detection
-    // When a message is requeued by external process, it gets a new SQS message ID but same app message ID
-    private final ConcurrentHashMap<String, String> appMessageIdToPipelineKey = new ConcurrentHashMap<>();
+
     private final ConcurrentHashMap<String, ProcessPool> processPools = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, QueueConsumer> queueConsumers = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, MessageCallback> messageCallbacks = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, QueueConfig> queueConfigs = new ConcurrentHashMap<>();
 
     // Draining resources that are being phased out asynchronously
@@ -228,11 +227,13 @@ public class QueueManager implements MessageCallback {
      * Update map size gauges
      */
     private void updateMapSizeGauges() {
+        int trackerSize = inFlightTracker.size();
         if (inPipelineMapSizeGauge != null) {
-            inPipelineMapSizeGauge.set(inPipelineMap.size());
+            inPipelineMapSizeGauge.set(trackerSize);
         }
         if (messageCallbacksMapSizeGauge != null) {
-            messageCallbacksMapSizeGauge.set(messageCallbacks.size());
+            // Callbacks are tracked inside InFlightMessageTracker, same size
+            messageCallbacksMapSizeGauge.set(trackerSize);
         }
         if (activePoolCountGauge != null) {
             activePoolCountGauge.set(processPools.size());
@@ -266,43 +267,34 @@ public class QueueManager implements MessageCallback {
     private void cleanupRemainingMessages() {
         LOG.info("Cleaning up remaining messages in pipeline...");
 
-        int pipelineSize = inPipelineMap.size();
-        int callbacksSize = messageCallbacks.size();
+        int pipelineSize = inFlightTracker.size();
 
-        if (pipelineSize == 0 && callbacksSize == 0) {
+        if (pipelineSize == 0) {
             LOG.info("No remaining messages to clean up");
             return;
         }
 
-        LOG.infof("Found %d messages in pipeline and %d callbacks to clean up", pipelineSize, callbacksSize);
+        LOG.infof("Found %d messages in pipeline to clean up", pipelineSize);
 
         int nackedCount = 0;
         int errorCount = 0;
         long startTime = System.currentTimeMillis();
 
-        // Nack all messages still in pipeline
-        for (MessagePointer message : inPipelineMap.values()) {
+        // Nack all messages still in pipeline and clear tracking
+        var clearedMessages = inFlightTracker.clear().toList();
+        for (var tracked : clearedMessages) {
             try {
-                MessageCallback callback = messageCallbacks.get(message.id());
-                if (callback != null) {
-                    callback.nack(message);
-                    nackedCount++;
-                    LOG.debugf("Nacked message [%s] during shutdown", message.id());
-                } else {
-                    LOG.warnf("No callback found for message [%s] during shutdown cleanup", message.id());
-                }
+                tracked.callback().nack(tracked.message());
+                nackedCount++;
+                LOG.debugf("Nacked message [%s] during shutdown", tracked.messageId());
             } catch (Exception e) {
                 errorCount++;
-                LOG.errorf(e, "Error nacking message [%s] during shutdown: %s", message.id(), e.getMessage());
+                LOG.errorf(e, "Error nacking message [%s] during shutdown: %s", tracked.messageId(), e.getMessage());
             }
         }
 
-        // Clear all tracking maps
+        // Also clear the legacy inPipelineMap used by ProcessPoolImpl
         inPipelineMap.clear();
-        inPipelineTimestamps.clear();
-        inPipelineQueueIds.clear();
-        messageCallbacks.clear();
-        appMessageIdToPipelineKey.clear();
 
         // Update gauges one final time
         updateMapSizeGauges();
@@ -324,7 +316,7 @@ public class QueueManager implements MessageCallback {
     }
 
     /**
-     * Periodically check for potential memory leaks in the pipeline and callback maps
+     * Periodically check for potential memory leaks in the pipeline
      * Runs every 30 seconds to detect anomalies early
      */
     @Scheduled(every = "30s")
@@ -335,8 +327,7 @@ public class QueueManager implements MessageCallback {
             return;
         }
 
-        int pipelineSize = inPipelineMap.size();
-        int callbacksSize = messageCallbacks.size();
+        int pipelineSize = inFlightTracker.size();
 
         // Calculate total pool capacity (sum of all pool queue capacities)
         int totalCapacity = processPools.values().stream()
@@ -346,37 +337,25 @@ public class QueueManager implements MessageCallback {
         // Add minimum capacity for default pool that might be created
         totalCapacity = Math.max(totalCapacity, MIN_QUEUE_CAPACITY);
 
-        // WARNING: Pipeline map size exceeds total pool capacity
-        // This indicates messages are not being removed from the map
+        // WARNING: Pipeline size exceeds total pool capacity
+        // This indicates messages are not being removed from tracking
         if (pipelineSize > totalCapacity) {
             warningService.addWarning(
                 "PIPELINE_MAP_LEAK",
                 "WARN",
-                String.format("inPipelineMap size (%d) exceeds total pool capacity (%d) - possible memory leak",
+                String.format("In-flight tracker size (%d) exceeds total pool capacity (%d) - possible memory leak",
                     pipelineSize, totalCapacity),
                 "QueueManager"
             );
-            LOG.warnf("LEAK DETECTION: inPipelineMap size (%d) > total capacity (%d)", pipelineSize, totalCapacity);
+            LOG.warnf("LEAK DETECTION: in-flight tracker size (%d) > total capacity (%d)", pipelineSize, totalCapacity);
         }
 
-        // WARNING: Map size mismatch
-        // Pipeline and callbacks maps should have same size (one callback per message)
-        int sizeDifference = Math.abs(pipelineSize - callbacksSize);
-        if (sizeDifference > 10) {
-            warningService.addWarning(
-                "MAP_SIZE_MISMATCH",
-                "WARN",
-                String.format("Map size mismatch - pipeline: %d, callbacks: %d (diff: %d)",
-                    pipelineSize, callbacksSize, sizeDifference),
-                "QueueManager"
-            );
-            LOG.warnf("LEAK DETECTION: Map size mismatch - pipeline: %d, callbacks: %d", pipelineSize, callbacksSize);
-        }
+        // Note: Map size mismatch check is no longer needed since InFlightMessageTracker
+        // maintains consistency between message and callback tracking internally
 
-        // INFO: Log current map sizes for monitoring
+        // INFO: Log current tracker size for monitoring
         if (LOG.isDebugEnabled()) {
-            LOG.debugf("Map sizes - pipeline: %d, callbacks: %d, total capacity: %d",
-                pipelineSize, callbacksSize, totalCapacity);
+            LOG.debugf("In-flight tracker size: %d, total capacity: %d", pipelineSize, totalCapacity);
         }
     }
 
@@ -961,11 +940,12 @@ public class QueueManager implements MessageCallback {
         for (BatchMessage batchMsg : messages) {
             String sqsMessageId = batchMsg.sqsMessageId();
             String appMessageId = batchMsg.message().id();
+            String pipelineKey = sqsMessageId != null ? sqsMessageId : appMessageId;
 
-            // Check 1: Same SQS message ID (physical redelivery from SQS due to visibility timeout)
-            // This MUST be checked FIRST because the same SQS ID means it's a visibility timeout redelivery,
+            // Check 1: Same broker message ID (physical redelivery from SQS due to visibility timeout)
+            // This MUST be checked FIRST because the same broker ID means it's a visibility timeout redelivery,
             // NOT a requeue by an external process
-            if (sqsMessageId != null && inPipelineMap.containsKey(sqsMessageId)) {
+            if (sqsMessageId != null && inFlightTracker.containsKey(sqsMessageId)) {
                 LOG.debugf("SQS message [%s] (app ID: %s) already in pipeline - redelivery due to visibility timeout",
                     sqsMessageId, appMessageId);
 
@@ -975,22 +955,26 @@ public class QueueManager implements MessageCallback {
 
                 duplicates.add(batchMsg);
             }
-            // Check 2: Same application message ID but DIFFERENT SQS message ID (requeued by external process)
+            // Check 2: Same application message ID but DIFFERENT broker ID (requeued by external process)
             // This happens when a separate process requeues messages that were stuck in QUEUED status for 20+ min
             // The external process creates a NEW SQS message with the same application message ID
-            else if (appMessageIdToPipelineKey.containsKey(appMessageId)) {
-                String existingPipelineKey = appMessageIdToPipelineKey.get(appMessageId);
-                // Only treat as requeued duplicate if the SQS message IDs are DIFFERENT
+            else if (inFlightTracker.isInFlight(appMessageId)) {
+                var existingTracked = inFlightTracker.get(pipelineKey);
+                String existingPipelineKey = existingTracked.map(t -> t.pipelineKey()).orElse(null);
+
+                // Only treat as requeued duplicate if the broker message IDs are DIFFERENT
                 // If they're the same, it would have been caught by the check above
                 if (sqsMessageId != null && !sqsMessageId.equals(existingPipelineKey)) {
                     LOG.infof("Requeued message detected: app ID [%s] already in pipeline (existing SQS ID: %s, new SQS ID: %s) - will ACK to remove duplicate",
                         appMessageId, existingPipelineKey, sqsMessageId);
                     requeuedDuplicates.add(batchMsg);
                 } else {
-                    // Same SQS ID or null - treat as visibility timeout redelivery
+                    // Same broker ID or null - treat as visibility timeout redelivery
                     LOG.debugf("App message [%s] in pipeline with same SQS ID [%s] - visibility timeout redelivery",
                         appMessageId, sqsMessageId);
-                    updateReceiptHandleIfPossible(existingPipelineKey, appMessageId, batchMsg.callback());
+                    if (existingPipelineKey != null) {
+                        updateReceiptHandleIfPossible(existingPipelineKey, appMessageId, batchMsg.callback());
+                    }
                     duplicates.add(batchMsg);
                 }
             } else {
@@ -1105,6 +1089,7 @@ public class QueueManager implements MessageCallback {
 
                     // Get SQS message ID for pipeline tracking
                     String sqsMessageId = batchMsg.sqsMessageId();
+                    String queueIdentifier = getQueueIdentifier(batchMsg);
 
                     // Enrich message with batchId and sqsMessageId for tracking
                     MessagePointer enrichedMessage = new MessagePointer(
@@ -1114,18 +1099,27 @@ public class QueueManager implements MessageCallback {
                         message.mediationType(),
                         message.mediationTarget(),
                         message.messageGroupId(),
+                        message.highPriority(),  // Preserve high priority flag
                         batchId,  // Add batch ID
                         sqsMessageId  // Add SQS message ID
                     );
 
-                    // Add to pipeline using sqsMessageId as key (or fall back to app ID)
-                    String pipelineKey = sqsMessageId != null ? sqsMessageId : enrichedMessage.id();
+                    // Track message in-flight
+                    var trackResult = inFlightTracker.track(enrichedMessage, callback, queueIdentifier);
+                    if (trackResult instanceof InFlightMessageTracker.TrackResult.Duplicate dup) {
+                        // This shouldn't happen since we checked for duplicates in Phase 1,
+                        // but handle it gracefully
+                        LOG.warnf("Unexpected duplicate during tracking: message [%s], existing key [%s]",
+                            enrichedMessage.id(), dup.existingPipelineKey());
+                        callback.nack(enrichedMessage);
+                        queueMetrics.recordMessageDeferred(queueIdentifier);
+                        continue;
+                    }
+
+                    String pipelineKey = ((InFlightMessageTracker.TrackResult.Tracked) trackResult).pipelineKey();
+
+                    // Also add to legacy inPipelineMap for ProcessPoolImpl compatibility
                     inPipelineMap.put(pipelineKey, enrichedMessage);
-                    inPipelineTimestamps.put(pipelineKey, System.currentTimeMillis());
-                    inPipelineQueueIds.put(pipelineKey, getQueueIdentifier(batchMsg));
-                    messageCallbacks.put(pipelineKey, callback);
-                    // Track app message ID -> pipeline key for requeued message detection
-                    appMessageIdToPipelineKey.put(enrichedMessage.id(), pipelineKey);
 
                     // Try to submit to pool
                     boolean submitted = pool.submit(enrichedMessage);
@@ -1133,22 +1127,19 @@ public class QueueManager implements MessageCallback {
                         LOG.warnf("Failed to submit message [%s] to pool [%s] - nacking this and all subsequent in group [%s]",
                             enrichedMessage.id(), poolCode, groupId);
 
-                        // Remove from pipeline since we're nacking
+                        // Remove from tracking since we're nacking
+                        inFlightTracker.remove(pipelineKey);
                         inPipelineMap.remove(pipelineKey);
-                        inPipelineTimestamps.remove(pipelineKey);
-                        inPipelineQueueIds.remove(pipelineKey);
-                        messageCallbacks.remove(pipelineKey);
-                        appMessageIdToPipelineKey.remove(enrichedMessage.id());
 
                         // Nack this message (deferred - pool submission failed, will retry)
                         callback.nack(enrichedMessage);
-                        queueMetrics.recordMessageDeferred(getQueueIdentifier(batchMsg));
+                        queueMetrics.recordMessageDeferred(queueIdentifier);
 
                         // Set flag to nack all remaining messages in this group
                         nackRemaining = true;
                     } else {
                         LOG.debugf("Routed message [%s] to pool [%s]", enrichedMessage.id(), poolCode);
-                        queueMetrics.recordMessageProcessed(getQueueIdentifier(batchMsg), true);
+                        queueMetrics.recordMessageProcessed(queueIdentifier, true);
                     }
                 }
             }
@@ -1174,8 +1165,8 @@ public class QueueManager implements MessageCallback {
 
         // Check if message would be rejected BEFORE routing
         // This is necessary because routeMessageBatch doesn't return success/failure per message
-        boolean wasInPipeline = inPipelineMap.containsKey(pipelineKey);
-        boolean wasAppIdInPipeline = appMessageIdToPipelineKey.containsKey(appMessageId);
+        boolean wasInPipeline = inFlightTracker.containsKey(pipelineKey);
+        boolean wasAppIdInPipeline = inFlightTracker.isInFlight(appMessageId);
 
         // Delegate to batch routing with a single-element list
         java.util.List<BatchMessage> batch = java.util.List.of(new BatchMessage(
@@ -1191,7 +1182,7 @@ public class QueueManager implements MessageCallback {
         if (wasInPipeline || wasAppIdInPipeline) {
             return false;
         }
-        return inPipelineMap.containsKey(pipelineKey);
+        return inFlightTracker.containsKey(pipelineKey);
     }
 
     /**
@@ -1212,12 +1203,13 @@ public class QueueManager implements MessageCallback {
      */
     private void updateReceiptHandleIfPossible(String pipelineKey, String appMessageId, MessageCallback newCallback) {
         try {
-            MessageCallback storedCallback = messageCallbacks.get(pipelineKey);
-            if (storedCallback == null) {
+            var storedCallbackOpt = inFlightTracker.getCallback(pipelineKey);
+            if (storedCallbackOpt.isEmpty()) {
                 LOG.warnf("Cannot update receipt handle for message [%s] (key: %s) - no stored callback found",
                     appMessageId, pipelineKey);
                 return;
             }
+            MessageCallback storedCallback = storedCallbackOpt.get();
 
             if (!(storedCallback instanceof tech.flowcatalyst.messagerouter.callback.ReceiptHandleUpdatable updatable)) {
                 LOG.debugf("Stored callback for message [%s] does not support receipt handle updates", appMessageId);
@@ -1263,14 +1255,16 @@ public class QueueManager implements MessageCallback {
     public void ack(MessagePointer message) {
         // Use sqsMessageId as key if available, otherwise fall back to app message ID
         String pipelineKey = message.sqsMessageId() != null ? message.sqsMessageId() : message.id();
-        MessageCallback callback = messageCallbacks.remove(pipelineKey);
+
+        // Remove from tracker (handles all internal map cleanup)
+        var removed = inFlightTracker.remove(pipelineKey);
+
+        // Also remove from legacy inPipelineMap for ProcessPoolImpl compatibility
         inPipelineMap.remove(pipelineKey);
-        inPipelineTimestamps.remove(pipelineKey);
-        inPipelineQueueIds.remove(pipelineKey);
-        appMessageIdToPipelineKey.remove(message.id());  // Clean up app message ID tracking
-        if (callback != null) {
-            callback.ack(message);
-        }
+
+        // Call the stored callback
+        removed.ifPresent(tracked -> tracked.callback().ack(message));
+
         updateMapSizeGauges();
     }
 
@@ -1278,14 +1272,16 @@ public class QueueManager implements MessageCallback {
     public void nack(MessagePointer message) {
         // Use sqsMessageId as key if available, otherwise fall back to app message ID
         String pipelineKey = message.sqsMessageId() != null ? message.sqsMessageId() : message.id();
-        MessageCallback callback = messageCallbacks.remove(pipelineKey);
+
+        // Remove from tracker (handles all internal map cleanup)
+        var removed = inFlightTracker.remove(pipelineKey);
+
+        // Also remove from legacy inPipelineMap for ProcessPoolImpl compatibility
         inPipelineMap.remove(pipelineKey);
-        inPipelineTimestamps.remove(pipelineKey);
-        inPipelineQueueIds.remove(pipelineKey);
-        appMessageIdToPipelineKey.remove(message.id());  // Clean up app message ID tracking
-        if (callback != null) {
-            callback.nack(message);
-        }
+
+        // Call the stored callback
+        removed.ifPresent(tracked -> tracked.callback().nack(message));
+
         updateMapSizeGauges();
     }
 
@@ -1383,22 +1379,19 @@ public class QueueManager implements MessageCallback {
      */
     public java.util.List<tech.flowcatalyst.messagerouter.model.InFlightMessage> getInFlightMessages(
             int limit, String messageIdFilter) {
-        return inPipelineMap.entrySet().stream()
-            .map(entry -> {
-                String brokerMessageId = entry.getKey();  // SQS/broker message ID (pipeline key)
-                MessagePointer msg = entry.getValue();
-                String appMessageId = msg.id();  // Application message ID from MessagePointer
-                Long timestamp = inPipelineTimestamps.get(brokerMessageId);
-                if (timestamp == null) {
-                    timestamp = System.currentTimeMillis();
-                }
-                String queueId = inPipelineQueueIds.getOrDefault(brokerMessageId, "unknown");
+        return inFlightTracker.stream()
+            .map(tracked -> {
+                String brokerMessageId = tracked.pipelineKey();
+                String appMessageId = tracked.messageId();
+                long timestamp = tracked.trackedAt().toEpochMilli();
+                String queueId = tracked.queueId() != null ? tracked.queueId() : "unknown";
+                String poolCode = tracked.message() != null ? tracked.message().poolCode() : "unknown";
                 return tech.flowcatalyst.messagerouter.model.InFlightMessage.from(
                     appMessageId,
                     brokerMessageId,
                     queueId,
                     timestamp,
-                    msg.poolCode()
+                    poolCode
                 );
             })
             .filter(msg -> messageIdFilter == null || messageIdFilter.isEmpty() ||
@@ -1415,6 +1408,14 @@ public class QueueManager implements MessageCallback {
      * @return true if message is already in pipeline (redelivery), false if new message
      */
     public boolean isMessageInPipeline(String sqsMessageId) {
-        return inPipelineMap.containsKey(sqsMessageId);
+        return inFlightTracker.containsKey(sqsMessageId);
+    }
+
+    /**
+     * Get the number of messages currently in-flight
+     * @return count of in-flight messages
+     */
+    public int getInFlightCount() {
+        return inFlightTracker.size();
     }
 }

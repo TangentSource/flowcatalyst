@@ -36,7 +36,7 @@ class QueueManagerTest {
     private QueueManager queueManager;
     private ConcurrentHashMap<String, ProcessPool> processPools;
     private ConcurrentHashMap<String, MessagePointer> inPipelineMap;
-    private ConcurrentHashMap<String, MessageCallback> messageCallbacks;
+    private InFlightMessageTracker inFlightTracker;
 
     private Mediator mockMediator;
     private MediatorFactory mockMediatorFactory;
@@ -79,15 +79,15 @@ class QueueManagerTest {
             1000   // poolWarningThreshold
         );
 
-        // Access internal maps (still need reflection for these, but only for verification)
+        // Access internal fields (still need reflection for these, but only for verification)
         processPools = getPrivateField(queueManager, "processPools");
         inPipelineMap = getPrivateField(queueManager, "inPipelineMap");
-        messageCallbacks = getPrivateField(queueManager, "messageCallbacks");
+        inFlightTracker = getPrivateField(queueManager, "inFlightTracker");
 
         // Clear any existing state
         processPools.clear();
         inPipelineMap.clear();
-        messageCallbacks.clear();
+        inFlightTracker.clear();
     }
 
     @AfterEach
@@ -103,7 +103,7 @@ class QueueManagerTest {
 
         processPools.clear();
         inPipelineMap.clear();
-        messageCallbacks.clear();
+        inFlightTracker.clear();
 
         // Reset mocks
         reset(mockMediator, mockMediatorFactory, mockPoolMetrics, mockWarningService);
@@ -127,7 +127,7 @@ class QueueManagerTest {
         // Then
         assertTrue(routed, "Message should be routed successfully");
         assertTrue(inPipelineMap.containsKey(message.id()), "Message should be in pipeline map");
-        assertTrue(messageCallbacks.containsKey(message.id()), "Callback should be registered");
+        assertTrue(inFlightTracker.isInFlight(message.id()), "Callback should be registered");
 
         // Wait for processing - use any() matcher since batchId gets added
         await().untilAsserted(() -> {
@@ -177,7 +177,7 @@ class QueueManagerTest {
         // Block the mediator to fill the queue
         when(mockMediator.process(any())).thenAnswer(invocation -> {
             Thread.sleep(300);
-            return MediationResult.SUCCESS;
+            return MediationOutcome.success();
         });
 
         MessagePointer message1 = new MessagePointer("msg-1", "SMALL-POOL", "token", MediationType.HTTP, "http://test.com", null
@@ -209,7 +209,7 @@ class QueueManagerTest {
         assertFalse(routed4, "Fourth message should be rejected - queue full");
 
         assertFalse(inPipelineMap.containsKey(message4.id()), "Rejected message should not be in pipeline");
-        assertFalse(messageCallbacks.containsKey(message4.id()), "Rejected message callback should not be registered");
+        assertFalse(inFlightTracker.isInFlight(message4.id()), "Rejected message callback should not be registered");
 
         // Verify warning was added
         verify(mockWarningService, atLeastOnce()).addWarning(
@@ -245,7 +245,7 @@ class QueueManagerTest {
 
         // Then - use any() matcher since message may have batchId added
         verify(mockCallback).ack(any(MessagePointer.class));
-        assertFalse(messageCallbacks.containsKey(message.id()), "Callback should be removed after ack");
+        assertFalse(inFlightTracker.isInFlight(message.id()), "Callback should be removed after ack");
     }
 
     @Test
@@ -258,7 +258,7 @@ class QueueManagerTest {
             , null);
 
         MessageCallback mockCallback = mock(MessageCallback.class);
-        when(mockMediator.process(any(MessagePointer.class))).thenReturn(tech.flowcatalyst.messagerouter.model.MediationOutcome.errorProcess(null));
+        when(mockMediator.process(any(MessagePointer.class))).thenReturn(tech.flowcatalyst.messagerouter.model.MediationOutcome.errorProcess((Integer) null));
 
         // Route the message
         queueManager.routeMessage(message, mockCallback, "test-queue");
@@ -273,7 +273,7 @@ class QueueManagerTest {
 
         // Then - use any() matcher since message may have batchId added
         verify(mockCallback).nack(any(MessagePointer.class));
-        assertFalse(messageCallbacks.containsKey(message.id()), "Callback should be removed after nack");
+        assertFalse(inFlightTracker.isInFlight(message.id()), "Callback should be removed after nack");
     }
 
     @Test

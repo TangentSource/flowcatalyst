@@ -230,7 +230,7 @@ class BatchGroupFifoIntegrationTest {
 
                 // Simulate HTTP call result based on message ID
                 if (message.id().equals("msg-2")) {
-                    return tech.flowcatalyst.messagerouter.model.MediationOutcome.errorProcess(null);  // Fail msg-2
+                    return tech.flowcatalyst.messagerouter.model.MediationOutcome.errorProcess((Integer) null);  // Fail msg-2
                 }
                 return tech.flowcatalyst.messagerouter.model.MediationOutcome.success();
             }

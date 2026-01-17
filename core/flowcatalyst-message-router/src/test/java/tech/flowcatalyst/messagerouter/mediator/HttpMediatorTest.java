@@ -80,7 +80,7 @@ class HttpMediatorTest {
     }
 
     @Test
-    void shouldReturnErrorProcessForInvalidHost() {
+    void shouldReturnErrorConnectionForInvalidHost() {
         // Given - invalid host that will cause connection error (transient, will retry via visibility timeout)
         MessagePointer message = new MessagePointer("msg-connection-error", "POOL-A", "test-token", MediationType.HTTP, "http://invalid-host-that-does-not-exist.local:9999/test"
         , null
@@ -90,8 +90,8 @@ class HttpMediatorTest {
         MediationOutcome outcome = httpMediator.process(message);
 
         // Then
-        // Connection errors are transient, so they return ERROR_PROCESS after retries are exhausted
-        assertEquals(MediationResult.ERROR_PROCESS, outcome.result(), "Should return ERROR_PROCESS for connection failure (transient error)");
+        // Connection errors are transient - they use ERROR_CONNECTION which resets visibility timeout to default
+        assertEquals(MediationResult.ERROR_CONNECTION, outcome.result(), "Should return ERROR_CONNECTION for connection failure");
     }
 
     @Test

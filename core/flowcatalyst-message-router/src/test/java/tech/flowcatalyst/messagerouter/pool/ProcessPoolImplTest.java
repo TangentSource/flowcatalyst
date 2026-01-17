@@ -13,8 +13,11 @@ import tech.flowcatalyst.messagerouter.model.MediationType;
 import tech.flowcatalyst.messagerouter.warning.WarningService;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -108,7 +111,7 @@ class ProcessPoolImplTest {
         , null
             , null);
 
-        when(mockMediator.process(message)).thenReturn(MediationOutcome.errorProcess(null));
+        when(mockMediator.process(message)).thenReturn(MediationOutcome.errorProcess((Integer) null));
         inPipelineMap.put(message.id(), message);
 
         // When
@@ -315,7 +318,8 @@ class ProcessPoolImplTest {
         , null
             , null);
 
-        when(mockMediator.process(message)).thenReturn(MediationOutcome.success());
+        // Use any() matcher since ProcessPoolImpl may modify the message (adds batchId)
+        when(mockMediator.process(any(MessagePointer.class))).thenReturn(MediationOutcome.success());
         inPipelineMap.put(message.id(), message);
 
         processPool.start();
@@ -327,8 +331,8 @@ class ProcessPoolImplTest {
         // Wait for pool to finish processing buffered messages
         await().untilAsserted(() -> assertTrue(processPool.isFullyDrained()));
 
-        // Then
-        verify(mockMediator).process(message);
+        // Then - use any() since message may have been modified
+        verify(mockMediator).process(any(MessagePointer.class));
         assertTrue(inPipelineMap.isEmpty());
 
         // Cleanup
@@ -413,7 +417,7 @@ class ProcessPoolImplTest {
 
         // First message succeeds, second fails, third should be auto-nacked
         when(mockMediator.process(message1)).thenReturn(MediationOutcome.success());
-        when(mockMediator.process(message2)).thenReturn(MediationOutcome.errorProcess(null));
+        when(mockMediator.process(message2)).thenReturn(MediationOutcome.errorProcess((Integer) null));
         when(mockMediator.process(message3)).thenReturn(MediationOutcome.success());
 
         inPipelineMap.put(message1.id(), message1);
@@ -466,7 +470,7 @@ class ProcessPoolImplTest {
         );
 
         // First message fails, second should still process (different batch+group)
-        when(mockMediator.process(message1)).thenReturn(MediationOutcome.errorProcess(null));
+        when(mockMediator.process(message1)).thenReturn(MediationOutcome.errorProcess((Integer) null));
         when(mockMediator.process(message2)).thenReturn(MediationOutcome.success());
 
         inPipelineMap.put(message1.id(), message1);
@@ -563,7 +567,7 @@ class ProcessPoolImplTest {
         );
 
         // First fails, second should still process (no batch tracking)
-        when(mockMediator.process(message1)).thenReturn(MediationOutcome.errorProcess(null));
+        when(mockMediator.process(message1)).thenReturn(MediationOutcome.errorProcess((Integer) null));
         when(mockMediator.process(message2)).thenReturn(MediationOutcome.success());
 
         inPipelineMap.put(message1.id(), message1);
@@ -725,5 +729,370 @@ class ProcessPoolImplTest {
         assertFalse(pool.isRateLimited(), "Should not be rate limited when null");
 
         pool.drain();
+    }
+
+    // ========================================
+    // High Priority Message Tests
+    // ========================================
+
+    @Test
+    void shouldProcessHighPriorityMessagesFirst() throws InterruptedException {
+        // Given: Pool with concurrency=1 to ensure sequential processing
+        // This test verifies that when messages are QUEUED, high priority are processed before regular
+        ProcessPoolImpl priorityPool = new ProcessPoolImpl(
+            "PRIORITY-POOL",
+            1, // Single worker to ensure deterministic ordering
+            100,
+            null,
+            mockMediator,
+            mockCallback,
+            inPipelineMap,
+            mockPoolMetrics,
+            mockWarningService
+        );
+
+        // Track processing order
+        List<String> processingOrder = new CopyOnWriteArrayList<>();
+
+        // Use latch to block first message, allowing subsequent messages to queue
+        CountDownLatch firstMessageBlocking = new CountDownLatch(1);
+        CountDownLatch firstMessageStarted = new CountDownLatch(1);
+        CountDownLatch processingComplete = new CountDownLatch(3);
+
+        when(mockMediator.process(any())).thenAnswer(inv -> {
+            MessagePointer msg = inv.getArgument(0);
+            if (msg.id().equals("msg-blocking")) {
+                // Signal that first message has started
+                firstMessageStarted.countDown();
+                // Block until other messages are queued
+                firstMessageBlocking.await();
+            }
+            processingOrder.add(msg.id());
+            processingComplete.countDown();
+            return MediationOutcome.success();
+        });
+
+        // First message is used to block processing while we queue others
+        MessagePointer blockingMsg = new MessagePointer(
+            "msg-blocking", "PRIORITY-POOL", "token", MediationType.HTTP,
+            "http://test.com", "group-1", false, null);
+        MessagePointer regularMsg = new MessagePointer(
+            "msg-regular", "PRIORITY-POOL", "token", MediationType.HTTP,
+            "http://test.com", "group-1", false, null);
+        MessagePointer highPriorityMsg = new MessagePointer(
+            "msg-high", "PRIORITY-POOL", "token", MediationType.HTTP,
+            "http://test.com", "group-1", true, null);
+
+        inPipelineMap.put(blockingMsg.id(), blockingMsg);
+        inPipelineMap.put(regularMsg.id(), regularMsg);
+        inPipelineMap.put(highPriorityMsg.id(), highPriorityMsg);
+
+        // When: Start pool and submit blocking message first
+        priorityPool.start();
+        priorityPool.submit(blockingMsg);
+
+        // Wait for blocking message to start processing (hold the semaphore)
+        assertTrue(firstMessageStarted.await(5, TimeUnit.SECONDS),
+            "First message should start processing");
+
+        // Now queue regular and high priority messages (in that order)
+        // Since first message holds the semaphore, these will be queued
+        priorityPool.submit(regularMsg);
+        priorityPool.submit(highPriorityMsg);
+
+        // Give brief moment for messages to be added to queues
+        Thread.sleep(20);
+
+        // Release the blocking message
+        firstMessageBlocking.countDown();
+
+        // Wait for all messages to be processed
+        assertTrue(processingComplete.await(5, TimeUnit.SECONDS),
+            "All messages should be processed within timeout");
+
+        // Then: Verify order - blocking first, then high priority, then regular
+        assertEquals(3, processingOrder.size(), "All 3 messages should be processed");
+        assertEquals("msg-blocking", processingOrder.get(0),
+            "Blocking message should be processed first (it was already running)");
+        assertEquals("msg-high", processingOrder.get(1),
+            "High priority message should be processed before regular");
+        assertEquals("msg-regular", processingOrder.get(2),
+            "Regular message should be processed last");
+
+        priorityPool.drain();
+    }
+
+    @Test
+    void shouldMaintainFifoWithinHighPriorityTier() throws InterruptedException {
+        // Given: Pool with concurrency=1
+        ProcessPoolImpl priorityPool = new ProcessPoolImpl(
+            "PRIORITY-POOL-2",
+            1,
+            100,
+            null,
+            mockMediator,
+            mockCallback,
+            inPipelineMap,
+            mockPoolMetrics,
+            mockWarningService
+        );
+
+        List<String> processingOrder = new CopyOnWriteArrayList<>();
+        CountDownLatch startProcessing = new CountDownLatch(1);
+        CountDownLatch processingComplete = new CountDownLatch(3);
+
+        when(mockMediator.process(any())).thenAnswer(inv -> {
+            startProcessing.await();
+            MessagePointer msg = inv.getArgument(0);
+            processingOrder.add(msg.id());
+            processingComplete.countDown();
+            return MediationOutcome.success();
+        });
+
+        // Create 3 high priority messages
+        MessagePointer high1 = new MessagePointer(
+            "high-1", "PRIORITY-POOL-2", "token", MediationType.HTTP,
+            "http://test.com", "group-1", true, null);
+        MessagePointer high2 = new MessagePointer(
+            "high-2", "PRIORITY-POOL-2", "token", MediationType.HTTP,
+            "http://test.com", "group-1", true, null);
+        MessagePointer high3 = new MessagePointer(
+            "high-3", "PRIORITY-POOL-2", "token", MediationType.HTTP,
+            "http://test.com", "group-1", true, null);
+
+        inPipelineMap.put(high1.id(), high1);
+        inPipelineMap.put(high2.id(), high2);
+        inPipelineMap.put(high3.id(), high3);
+
+        // When
+        priorityPool.start();
+        priorityPool.submit(high1);
+        priorityPool.submit(high2);
+        priorityPool.submit(high3);
+
+        Thread.sleep(50);
+        startProcessing.countDown();
+
+        assertTrue(processingComplete.await(5, TimeUnit.SECONDS));
+
+        // Then: Should process in FIFO order: high-1, high-2, high-3
+        assertEquals(List.of("high-1", "high-2", "high-3"), processingOrder,
+            "High priority messages should maintain FIFO order within their tier");
+
+        priorityPool.drain();
+    }
+
+    @Test
+    void shouldShareConcurrencyAcrossPriorities() throws InterruptedException {
+        // Given: Pool with concurrency=2
+        ProcessPoolImpl priorityPool = new ProcessPoolImpl(
+            "SHARED-CONCURRENCY-POOL",
+            2, // 2 concurrent workers
+            100,
+            null,
+            mockMediator,
+            mockCallback,
+            inPipelineMap,
+            mockPoolMetrics,
+            mockWarningService
+        );
+
+        // Track concurrent processing
+        CountDownLatch allStarted = new CountDownLatch(2);
+        CountDownLatch continueProcessing = new CountDownLatch(1);
+        List<String> concurrentMessages = new CopyOnWriteArrayList<>();
+
+        when(mockMediator.process(any())).thenAnswer(inv -> {
+            MessagePointer msg = inv.getArgument(0);
+            concurrentMessages.add(msg.id());
+            allStarted.countDown();
+            continueProcessing.await(); // Block until we check concurrency
+            return MediationOutcome.success();
+        });
+
+        // Create 4 messages: 2 high, 2 regular
+        MessagePointer high1 = new MessagePointer(
+            "high-1", "SHARED-CONCURRENCY-POOL", "token", MediationType.HTTP,
+            "http://test.com", "group-a", true, null); // Different group to allow concurrent
+        MessagePointer high2 = new MessagePointer(
+            "high-2", "SHARED-CONCURRENCY-POOL", "token", MediationType.HTTP,
+            "http://test.com", "group-b", true, null);
+        MessagePointer regular1 = new MessagePointer(
+            "regular-1", "SHARED-CONCURRENCY-POOL", "token", MediationType.HTTP,
+            "http://test.com", "group-c", false, null);
+        MessagePointer regular2 = new MessagePointer(
+            "regular-2", "SHARED-CONCURRENCY-POOL", "token", MediationType.HTTP,
+            "http://test.com", "group-d", false, null);
+
+        inPipelineMap.put(high1.id(), high1);
+        inPipelineMap.put(high2.id(), high2);
+        inPipelineMap.put(regular1.id(), regular1);
+        inPipelineMap.put(regular2.id(), regular2);
+
+        // When
+        priorityPool.start();
+        priorityPool.submit(high1);
+        priorityPool.submit(high2);
+        priorityPool.submit(regular1);
+        priorityPool.submit(regular2);
+
+        // Wait for 2 messages to start processing (semaphore limit)
+        assertTrue(allStarted.await(5, TimeUnit.SECONDS),
+            "Should process up to 2 messages concurrently (semaphore limit)");
+
+        // Then: Exactly 2 messages should be processing (shared semaphore)
+        assertEquals(2, concurrentMessages.size(),
+            "Shared semaphore should limit to 2 concurrent regardless of priority");
+
+        // Allow processing to complete
+        continueProcessing.countDown();
+
+        // Cleanup
+        priorityPool.drain();
+    }
+
+    @Test
+    void shouldHandleHighPriorityWithDefaultFalse() {
+        // Given: Message without explicit highPriority (should default to false)
+        MessagePointer message = new MessagePointer(
+            "msg-default", "TEST-POOL", "token", MediationType.HTTP,
+            "http://test.com", "group-1", null // Using backward-compatible constructor
+        );
+
+        when(mockMediator.process(any())).thenReturn(MediationOutcome.success());
+        inPipelineMap.put(message.id(), message);
+
+        // When
+        processPool.start();
+        boolean submitted = processPool.submit(message);
+
+        // Then: Should be processed successfully
+        assertTrue(submitted);
+
+        await().untilAsserted(() -> {
+            verify(mockMediator).process(any());
+            verify(mockCallback).ack(any());
+        });
+    }
+
+    @Test
+    void shouldProcessMixedPrioritiesAcrossDifferentGroups() throws InterruptedException {
+        // Given: Two groups, each with high and regular priority messages
+        // Use concurrency=1 per group (effectively 2 total but FIFO within each group)
+        ProcessPoolImpl priorityPool = new ProcessPoolImpl(
+            "MULTI-GROUP-POOL",
+            2, // Allow both groups to process concurrently
+            100,
+            null,
+            mockMediator,
+            mockCallback,
+            inPipelineMap,
+            mockPoolMetrics,
+            mockWarningService
+        );
+
+        // Track processing order per group
+        List<String> groupAOrder = new CopyOnWriteArrayList<>();
+        List<String> groupBOrder = new CopyOnWriteArrayList<>();
+
+        // Block first message of each group to ensure subsequent messages queue
+        CountDownLatch blockingStarted = new CountDownLatch(2); // Both groups started
+        CountDownLatch releaseBlocking = new CountDownLatch(1);
+        CountDownLatch processingComplete = new CountDownLatch(6); // 3 per group
+
+        when(mockMediator.process(any())).thenAnswer(inv -> {
+            MessagePointer msg = inv.getArgument(0);
+
+            // Block the first message of each group
+            if (msg.id().equals("groupA-blocking") || msg.id().equals("groupB-blocking")) {
+                blockingStarted.countDown();
+                releaseBlocking.await();
+            }
+
+            // Track order per group
+            if (msg.id().startsWith("groupA")) {
+                groupAOrder.add(msg.id());
+            } else {
+                groupBOrder.add(msg.id());
+            }
+
+            processingComplete.countDown();
+            return MediationOutcome.success();
+        });
+
+        // Group A: blocking first, then queue regular, then high
+        MessagePointer groupABlocking = new MessagePointer(
+            "groupA-blocking", "MULTI-GROUP-POOL", "token", MediationType.HTTP,
+            "http://test.com", "group-A", false, null);
+        MessagePointer groupARegular = new MessagePointer(
+            "groupA-regular", "MULTI-GROUP-POOL", "token", MediationType.HTTP,
+            "http://test.com", "group-A", false, null);
+        MessagePointer groupAHigh = new MessagePointer(
+            "groupA-high", "MULTI-GROUP-POOL", "token", MediationType.HTTP,
+            "http://test.com", "group-A", true, null);
+
+        // Group B: blocking first, then queue regular, then high
+        MessagePointer groupBBlocking = new MessagePointer(
+            "groupB-blocking", "MULTI-GROUP-POOL", "token", MediationType.HTTP,
+            "http://test.com", "group-B", false, null);
+        MessagePointer groupBRegular = new MessagePointer(
+            "groupB-regular", "MULTI-GROUP-POOL", "token", MediationType.HTTP,
+            "http://test.com", "group-B", false, null);
+        MessagePointer groupBHigh = new MessagePointer(
+            "groupB-high", "MULTI-GROUP-POOL", "token", MediationType.HTTP,
+            "http://test.com", "group-B", true, null);
+
+        inPipelineMap.put(groupABlocking.id(), groupABlocking);
+        inPipelineMap.put(groupARegular.id(), groupARegular);
+        inPipelineMap.put(groupAHigh.id(), groupAHigh);
+        inPipelineMap.put(groupBBlocking.id(), groupBBlocking);
+        inPipelineMap.put(groupBRegular.id(), groupBRegular);
+        inPipelineMap.put(groupBHigh.id(), groupBHigh);
+
+        // When: Submit blocking messages first to start threads
+        priorityPool.start();
+        priorityPool.submit(groupABlocking);
+        priorityPool.submit(groupBBlocking);
+
+        // Wait for blocking messages to start processing
+        assertTrue(blockingStarted.await(5, TimeUnit.SECONDS),
+            "Blocking messages should start processing");
+
+        // Now queue regular then high for each group
+        priorityPool.submit(groupARegular);
+        priorityPool.submit(groupAHigh);
+        priorityPool.submit(groupBRegular);
+        priorityPool.submit(groupBHigh);
+
+        // Give time for messages to queue
+        Thread.sleep(20);
+
+        // Release blocking messages
+        releaseBlocking.countDown();
+
+        // Wait for all 6 messages to be processed
+        assertTrue(processingComplete.await(5, TimeUnit.SECONDS),
+            "All messages should be processed within timeout");
+
+        // Then: Within each group, high priority should be processed before regular
+        // Group A order: blocking, high, regular
+        assertEquals(3, groupAOrder.size(), "Group A should have 3 messages");
+        assertEquals("groupA-blocking", groupAOrder.get(0),
+            "Group A blocking should be first");
+        assertEquals("groupA-high", groupAOrder.get(1),
+            "Group A high priority should come before regular");
+        assertEquals("groupA-regular", groupAOrder.get(2),
+            "Group A regular should be last");
+
+        // Group B order: blocking, high, regular
+        assertEquals(3, groupBOrder.size(), "Group B should have 3 messages");
+        assertEquals("groupB-blocking", groupBOrder.get(0),
+            "Group B blocking should be first");
+        assertEquals("groupB-high", groupBOrder.get(1),
+            "Group B high priority should come before regular");
+        assertEquals("groupB-regular", groupBOrder.get(2),
+            "Group B regular should be last");
+
+        priorityPool.drain();
     }
 }

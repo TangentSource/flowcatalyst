@@ -105,9 +105,11 @@ public class ProcessPoolImpl implements ProcessPool {
     private final ReentrantLock configLock = new ReentrantLock();
 
     // Per-message-group queues for FIFO ordering within groups, concurrent across groups
+    // Two tiers: high priority checked first, then regular
     // Key: messageGroupId (e.g., "order-12345"), Value: Queue for that group's messages
     // Each group has its own dedicated virtual thread that blocks on queue.poll()
-    private final ConcurrentHashMap<String, BlockingQueue<MessagePointer>> messageGroupQueues = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, BlockingQueue<MessagePointer>> highPriorityGroupQueues = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, BlockingQueue<MessagePointer>> regularGroupQueues = new ConcurrentHashMap<>();
 
     // Track active virtual threads per message group for death detection
     // Key: messageGroupId, Value: true if thread is actively running
@@ -218,7 +220,7 @@ public class ProcessPoolImpl implements ProcessPool {
         // The cleanup scheduled task will call shutdown() when fully drained
 
         LOG.infof("Process pool [%s] set to draining mode (queued: %d, active: %d, groups: %d)",
-            poolCode, totalQueuedMessages.get(), concurrency - semaphore.availablePermits(), messageGroupQueues.size());
+            poolCode, totalQueuedMessages.get(), concurrency - semaphore.availablePermits(), getActiveGroupCount());
     }
 
     @Override
@@ -247,10 +249,15 @@ public class ProcessPoolImpl implements ProcessPool {
                 message.id(), batchGroupKey);
         }
 
-        // Get or create queue for this message group
+        // Route message to appropriate priority tier queue
+        // High priority messages go to highPriorityGroupQueues, regular to regularGroupQueues
+        ConcurrentHashMap<String, BlockingQueue<MessagePointer>> targetQueues =
+            message.highPriority() ? highPriorityGroupQueues : regularGroupQueues;
+
+        // Get or create queue for this message group in the appropriate tier
         // Per-group queues are unbounded - pool-level capacity enforced by totalQueuedMessages check above
         // Note: No side effects in computeIfAbsent to comply with ConcurrentHashMap contract
-        BlockingQueue<MessagePointer> groupQueue = messageGroupQueues.computeIfAbsent(
+        BlockingQueue<MessagePointer> groupQueue = targetQueues.computeIfAbsent(
             groupId,
             k -> new LinkedBlockingQueue<>()
         );
@@ -258,10 +265,15 @@ public class ProcessPoolImpl implements ProcessPool {
         // Ensure thread is running for this group (atomic check-and-start)
         // putIfAbsent is atomic - only one thread will get null and start the worker
         // This handles both new groups and dead thread restarts
+        // Note: One thread handles BOTH high and regular priority queues for a group
         boolean startedThread = activeGroupThreads.putIfAbsent(finalGroupId, Boolean.TRUE) == null;
         if (startedThread) {
-            // Check if queue already has messages - indicates this is a restart after thread death
-            if (!groupQueue.isEmpty()) {
+            // Check if either queue already has messages - indicates this is a restart after thread death
+            BlockingQueue<MessagePointer> highQueue = highPriorityGroupQueues.get(finalGroupId);
+            BlockingQueue<MessagePointer> regularQueue = regularGroupQueues.get(finalGroupId);
+            boolean hasOrphanedMessages = (highQueue != null && !highQueue.isEmpty()) ||
+                                          (regularQueue != null && !regularQueue.isEmpty());
+            if (hasOrphanedMessages) {
                 LOG.warnf("Virtual thread for message group [%s] appears to have died - restarting", finalGroupId);
                 warningService.addWarning(
                     "GROUP_THREAD_RESTART",
@@ -272,7 +284,7 @@ public class ProcessPoolImpl implements ProcessPool {
             } else {
                 LOG.debugf("Created new message group [%s] with dedicated virtual thread", finalGroupId);
             }
-            executorService.submit(() -> processMessageGroup(finalGroupId, groupQueue));
+            executorService.submit(() -> processMessageGroup(finalGroupId));
         }
 
         // Check total capacity before submitting
@@ -511,12 +523,12 @@ public class ProcessPoolImpl implements ProcessPool {
     /**
      * Process messages for a single message group.
      * This method runs in its own dedicated virtual thread per group.
-     * Blocks on queue.poll() with timeout, auto-cleans up after idle period.
+     * Polls high priority queue first (non-blocking), then regular queue (with timeout).
+     * Auto-cleans up after idle period when both queues are empty.
      *
      * @param groupId the message group ID
-     * @param queue the queue for this message group
      */
-    private void processMessageGroup(String groupId, BlockingQueue<MessagePointer> queue) {
+    private void processMessageGroup(String groupId) {
         LOG.debugf("Starting message group processor for [%s]", groupId);
 
         try {
@@ -526,20 +538,44 @@ public class ProcessPoolImpl implements ProcessPool {
                 boolean semaphoreAcquired = false;
 
                 try {
-                    // 1. Block waiting for message with idle timeout
-                    // This is efficient with virtual threads - no CPU waste
-                    message = queue.poll(IDLE_TIMEOUT_MINUTES, TimeUnit.MINUTES);
+                    // Get both priority tier queues for this group
+                    BlockingQueue<MessagePointer> highQueue = highPriorityGroupQueues.get(groupId);
+                    BlockingQueue<MessagePointer> regularQueue = regularGroupQueues.get(groupId);
+
+                    // 1. Check high priority queue first (non-blocking)
+                    if (highQueue != null) {
+                        message = highQueue.poll();
+                    }
+
+                    // 2. If no high priority message, check regular queue with timeout
+                    if (message == null) {
+                        if (regularQueue != null) {
+                            // Block on regular queue with idle timeout
+                            message = regularQueue.poll(IDLE_TIMEOUT_MINUTES, TimeUnit.MINUTES);
+                        } else if (highQueue != null) {
+                            // Only high priority queue exists - block on it with timeout
+                            message = highQueue.poll(IDLE_TIMEOUT_MINUTES, TimeUnit.MINUTES);
+                        } else {
+                            // No queues exist yet - wait briefly and retry
+                            Thread.sleep(100);
+                            continue;
+                        }
+                    }
 
                     if (message == null) {
-                        // Idle timeout - check if queue is still empty and cleanup if so
-                        if (queue.isEmpty()) {
+                        // Idle timeout - check if both queues are empty and cleanup
+                        boolean highEmpty = (highQueue == null || highQueue.isEmpty());
+                        boolean regularEmpty = (regularQueue == null || regularQueue.isEmpty());
+
+                        if (highEmpty && regularEmpty) {
                             LOG.debugf("Message group [%s] idle for %d minutes, cleaning up",
                                 groupId, IDLE_TIMEOUT_MINUTES);
-                            messageGroupQueues.remove(groupId);
+                            highPriorityGroupQueues.remove(groupId);
+                            regularGroupQueues.remove(groupId);
                             activeGroupThreads.remove(groupId);  // Clean exit
                             return; // Exit this virtual thread
                         }
-                        continue; // Queue became non-empty, keep processing
+                        continue; // A queue became non-empty, keep processing
                     }
 
                     // We have a message!
@@ -642,17 +678,23 @@ public class ProcessPoolImpl implements ProcessPool {
             // Remove from active threads tracking - this allows detection of unexpected death
             activeGroupThreads.remove(groupId);
 
-            // Check if there are orphaned messages in the queue
+            // Check if there are orphaned messages in either queue
             // This can happen if we exited due to an error rather than idle timeout
-            int remainingMessages = queue.size();
+            BlockingQueue<MessagePointer> finalHighQueue = highPriorityGroupQueues.get(groupId);
+            BlockingQueue<MessagePointer> finalRegularQueue = regularGroupQueues.get(groupId);
+            int remainingHigh = (finalHighQueue != null) ? finalHighQueue.size() : 0;
+            int remainingRegular = (finalRegularQueue != null) ? finalRegularQueue.size() : 0;
+            int remainingMessages = remainingHigh + remainingRegular;
+
             if (remainingMessages > 0 && running.get()) {
-                LOG.warnf("Message group processor [%s] exiting with %d messages still in queue - " +
+                LOG.warnf("Message group processor [%s] exiting with %d messages still in queue (high: %d, regular: %d) - " +
                     "these will be processed when a new message arrives and restarts the thread",
-                    groupId, remainingMessages);
+                    groupId, remainingMessages, remainingHigh, remainingRegular);
                 warningService.addWarning(
                     "GROUP_THREAD_EXIT_WITH_MESSAGES",
                     "WARN",
-                    String.format("Group [%s] thread exited with %d orphaned messages", groupId, remainingMessages),
+                    String.format("Group [%s] thread exited with %d orphaned messages (high: %d, regular: %d)",
+                        groupId, remainingMessages, remainingHigh, remainingRegular),
                     "ProcessPool:" + poolCode
                 );
             } else {
@@ -723,7 +765,7 @@ public class ProcessPoolImpl implements ProcessPool {
         // Defensive: mediator should never return null, but guard against it
         if (outcome == null || outcome.result() == null) {
             LOG.errorf("CRITICAL: Mediator returned null outcome/result for message [%s], treating as transient error", message.id());
-            outcome = MediationOutcome.errorProcess(null);
+            outcome = MediationOutcome.errorProcess((Integer) null);
             warningService.addWarning(
                 "MEDIATOR_NULL_RESULT",
                 "CRITICAL",
@@ -917,13 +959,21 @@ public class ProcessPoolImpl implements ProcessPool {
         int activeWorkers = concurrency - semaphore.availablePermits();
         int availablePermits = semaphore.availablePermits();
         int queueSize = totalQueuedMessages.get();
-        int messageGroupCount = messageGroupQueues.size();
+        int messageGroupCount = getActiveGroupCount();
 
         // DEBUG: Log per-group queue sizes when we have queued messages
         if (queueSize > 0 && messageGroupCount > 1) {
             StringBuilder groupStats = new StringBuilder();
             groupStats.append(String.format("Pool [%s] distribution: ", poolCode));
-            messageGroupQueues.forEach((groupId, queue) -> {
+            // Log high priority queue sizes
+            highPriorityGroupQueues.forEach((groupId, queue) -> {
+                int size = queue.size();
+                if (size > 0) {
+                    groupStats.append(String.format("[%s(HI): %d] ", groupId, size));
+                }
+            });
+            // Log regular queue sizes
+            regularGroupQueues.forEach((groupId, queue) -> {
                 int size = queue.size();
                 if (size > 0) {
                     groupStats.append(String.format("[%s: %d] ", groupId, size));
@@ -934,6 +984,16 @@ public class ProcessPoolImpl implements ProcessPool {
         }
 
         poolMetrics.updatePoolGauges(poolCode, activeWorkers, availablePermits, queueSize, messageGroupCount);
+    }
+
+    /**
+     * Returns the count of unique active message groups across both priority tiers.
+     */
+    private int getActiveGroupCount() {
+        java.util.Set<String> allGroups = new java.util.HashSet<>();
+        allGroups.addAll(highPriorityGroupQueues.keySet());
+        allGroups.addAll(regularGroupQueues.keySet());
+        return allGroups.size();
     }
 
     /**

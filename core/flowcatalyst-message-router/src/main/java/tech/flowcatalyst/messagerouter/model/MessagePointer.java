@@ -25,6 +25,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  *                       </ul>
  *                       See <a href="../../../../../../MESSAGE_GROUP_FIFO.md">MESSAGE_GROUP_FIFO.md</a>
  *                       for detailed documentation.
+ * @param highPriority Whether this message should be processed before regular priority messages
+ *                     within the same pool and message group. High priority messages are checked
+ *                     first when polling from queues. Defaults to false if not specified.
  * @param batchId Internal batch identifier (NOT part of external contract, populated during routing).
  *                Used to track messages from the same batch for FIFO ordering enforcement.
  *                When a message in a batch+group fails, all subsequent messages in that
@@ -40,14 +43,23 @@ public record MessagePointer(
     @JsonProperty("mediationType") MediationType mediationType,
     @JsonProperty("mediationTarget") String mediationTarget,
     @JsonProperty(value = "messageGroupId", required = true) String messageGroupId,
+    @JsonProperty("highPriority") boolean highPriority,  // Defaults to false when missing from JSON
     @JsonIgnore String batchId,  // Internal only - never part of queue message contract
     @JsonIgnore String sqsMessageId  // AWS SQS internal message ID for pipeline tracking
 ) {
     /**
-     * Constructor without sqsMessageId for backward compatibility
+     * Constructor without highPriority for backward compatibility (defaults to false)
      */
     public MessagePointer(String id, String poolCode, String authToken, MediationType mediationType,
                          String mediationTarget, String messageGroupId, String batchId) {
-        this(id, poolCode, authToken, mediationType, mediationTarget, messageGroupId, batchId, null);
+        this(id, poolCode, authToken, mediationType, mediationTarget, messageGroupId, false, batchId, null);
+    }
+
+    /**
+     * Constructor with highPriority but without sqsMessageId
+     */
+    public MessagePointer(String id, String poolCode, String authToken, MediationType mediationType,
+                         String mediationTarget, String messageGroupId, boolean highPriority, String batchId) {
+        this(id, poolCode, authToken, mediationType, mediationTarget, messageGroupId, highPriority, batchId, null);
     }
 }

@@ -132,7 +132,7 @@ public abstract class AbstractQueueConsumer implements QueueConsumer {
                         messageId, raw.sqsMessageId());
                 }
 
-                // Use the already-parsed MessagePointer directly (it already has messageGroupId from JSON body)
+                // Use the already-parsed MessagePointer directly (it already has messageGroupId and highPriority from JSON body)
                 // batchId is null here - it will be populated by QueueManager during routing
                 MessagePointer messagePointer = new MessagePointer(
                     parsedMessage.id(),
@@ -141,6 +141,7 @@ public abstract class AbstractQueueConsumer implements QueueConsumer {
                     parsedMessage.mediationType(),
                     parsedMessage.mediationTarget(),
                     messageGroupId,  // Use messageGroupId from MessagePointer JSON body
+                    parsedMessage.highPriority(),  // Use highPriority from MessagePointer JSON body (defaults to false)
                     null  // batchId populated by QueueManager.routeMessageBatch()
                 );
 

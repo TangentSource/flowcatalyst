@@ -51,7 +51,7 @@ public class AwsAlbTrafficStrategy implements TrafficManagementStrategy {
         lastError = null;
 
         try {
-            Target target = Target.builder()
+            TargetDescription target = TargetDescription.builder()
                 .id(targetId)
                 .port(targetPort)
                 .build();
@@ -86,7 +86,7 @@ public class AwsAlbTrafficStrategy implements TrafficManagementStrategy {
         lastError = null;
 
         try {
-            Target target = Target.builder()
+            TargetDescription target = TargetDescription.builder()
                 .id(targetId)
                 .port(targetPort)
                 .build();
