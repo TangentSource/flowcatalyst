@@ -40,10 +40,13 @@ export interface SecretProvider {
  * Local encrypted secret provider using AES-256-GCM
  */
 export class EncryptedSecretProvider implements SecretProvider {
+	private static readonly ENCRYPTED_PREFIX = 'encrypted:';
+	private static readonly PLAINTEXT_PREFIX = 'encrypt:';
+
 	constructor(private encryptionService: EncryptionService) {}
 
 	canHandle(reference: string): boolean {
-		return reference.startsWith('encrypted:');
+		return reference.startsWith(EncryptedSecretProvider.ENCRYPTED_PREFIX);
 	}
 
 	getProviderType(): string {
@@ -68,6 +71,54 @@ export class EncryptedSecretProvider implements SecretProvider {
 			return err(result.error);
 		}
 		return ok(undefined);
+	}
+
+	/**
+	 * Encrypt a plaintext value and return an encrypted reference.
+	 *
+	 * @param plaintext - The plaintext value to encrypt
+	 * @returns Result with `encrypted:BASE64` format string, or error
+	 */
+	encryptReference(plaintext: string): Result<string, SecretError> {
+		const result = this.encryptionService.encrypt(plaintext);
+		if (result.isErr()) {
+			return err({
+				type: 'resolution_failed',
+				reference: '***',
+				message: result.error.message,
+			});
+		}
+		return ok(result.value);
+	}
+
+	/**
+	 * Check if a reference is a plaintext reference (needs encryption).
+	 *
+	 * Plaintext references start with `encrypt:` prefix.
+	 *
+	 * @param reference - The reference to check
+	 * @returns true if the reference needs encryption
+	 */
+	isPlaintextReference(reference: string): boolean {
+		return reference.startsWith(EncryptedSecretProvider.PLAINTEXT_PREFIX);
+	}
+
+	/**
+	 * Prepare a value for storage, encrypting if needed.
+	 *
+	 * - If value starts with `encrypt:`, encrypt the plaintext after the prefix
+	 * - If value starts with `encrypted:`, return as-is
+	 * - Otherwise, return as-is (not an encrypted reference)
+	 *
+	 * @param reference - The reference to prepare
+	 * @returns Result with storage-ready value, or error
+	 */
+	async prepareForStorage(reference: string): Promise<Result<string, SecretError>> {
+		if (this.isPlaintextReference(reference)) {
+			const plaintext = reference.slice(EncryptedSecretProvider.PLAINTEXT_PREFIX.length);
+			return this.encryptReference(plaintext);
+		}
+		return ok(reference);
 	}
 }
 
