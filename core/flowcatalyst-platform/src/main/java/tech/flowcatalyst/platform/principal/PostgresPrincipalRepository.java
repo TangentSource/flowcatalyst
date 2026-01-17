@@ -116,6 +116,7 @@ class PostgresPrincipalRepository implements PrincipalRepository {
 
     @Override
     public void persist(Principal principal) {
+        UserIdentity ui = principal.userIdentity;
         jdbi.useExtension(PrincipalDao.class, dao -> dao.insert(
             principal.id,
             principal.type != null ? principal.type.name() : null,
@@ -124,7 +125,12 @@ class PostgresPrincipalRepository implements PrincipalRepository {
             principal.applicationId,
             principal.name,
             principal.active,
-            JsonHelper.toJson(principal.userIdentity),
+            ui != null ? ui.email : null,
+            ui != null ? ui.emailDomain : null,
+            ui != null && ui.idpType != null ? ui.idpType.name() : null,
+            ui != null ? ui.externalIdpId : null,
+            ui != null ? ui.passwordHash : null,
+            ui != null ? ui.lastLoginAt : null,
             JsonHelper.toJson(principal.serviceAccount),
             JsonHelper.toJsonArray(principal.roles),
             principal.createdAt,
@@ -135,6 +141,7 @@ class PostgresPrincipalRepository implements PrincipalRepository {
     @Override
     public void update(Principal principal) {
         principal.updatedAt = Instant.now();
+        UserIdentity ui = principal.userIdentity;
         jdbi.useExtension(PrincipalDao.class, dao -> dao.update(
             principal.id,
             principal.type != null ? principal.type.name() : null,
@@ -143,7 +150,12 @@ class PostgresPrincipalRepository implements PrincipalRepository {
             principal.applicationId,
             principal.name,
             principal.active,
-            JsonHelper.toJson(principal.userIdentity),
+            ui != null ? ui.email : null,
+            ui != null ? ui.emailDomain : null,
+            ui != null && ui.idpType != null ? ui.idpType.name() : null,
+            ui != null ? ui.externalIdpId : null,
+            ui != null ? ui.passwordHash : null,
+            ui != null ? ui.lastLoginAt : null,
             JsonHelper.toJson(principal.serviceAccount),
             JsonHelper.toJsonArray(principal.roles),
             principal.updatedAt

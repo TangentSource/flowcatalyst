@@ -232,14 +232,10 @@ public class AggregateRegistry {
     private void persistPrincipal(Handle handle, Principal principal) {
         PrincipalDao dao = handle.attach(PrincipalDao.class);
         // Convert embedded objects to JSON
-        String userIdentityJson = null;
         String serviceAccountJson = null;
         String rolesJson = "[]";
         try {
             var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            if (principal.userIdentity != null) {
-                userIdentityJson = mapper.writeValueAsString(principal.userIdentity);
-            }
             if (principal.serviceAccount != null) {
                 serviceAccountJson = mapper.writeValueAsString(principal.serviceAccount);
             }
@@ -251,13 +247,24 @@ public class AggregateRegistry {
         String type = principal.type != null ? principal.type.name() : "USER";
         String scope = principal.scope != null ? principal.scope.name() : null;
 
+        // Extract user identity flat fields
+        var ui = principal.userIdentity;
+        String email = ui != null ? ui.email : null;
+        String emailDomain = ui != null ? ui.emailDomain : null;
+        String idpType = ui != null && ui.idpType != null ? ui.idpType.name() : null;
+        String externalIdpId = ui != null ? ui.externalIdpId : null;
+        String passwordHash = ui != null ? ui.passwordHash : null;
+        Instant lastLoginAt = ui != null ? ui.lastLoginAt : null;
+
         if (dao.findById(principal.id).isPresent()) {
             dao.update(principal.id, type, scope, principal.clientId, principal.applicationId,
-                      principal.name, principal.active, userIdentityJson, serviceAccountJson,
+                      principal.name, principal.active, email, emailDomain, idpType,
+                      externalIdpId, passwordHash, lastLoginAt, serviceAccountJson,
                       rolesJson, principal.updatedAt);
         } else {
             dao.insert(principal.id, type, scope, principal.clientId, principal.applicationId,
-                      principal.name, principal.active, userIdentityJson, serviceAccountJson,
+                      principal.name, principal.active, email, emailDomain, idpType,
+                      externalIdpId, passwordHash, lastLoginAt, serviceAccountJson,
                       rolesJson, principal.createdAt, principal.updatedAt);
         }
     }
@@ -293,21 +300,28 @@ public class AggregateRegistry {
             ? sa.clientIds.toArray(new String[0])
             : new String[0];
         String rolesJson = "[]";
-        String credentialsJson = null;
         try {
             var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
             if (sa.roles != null) {
                 rolesJson = mapper.writeValueAsString(sa.roles);
             }
-            if (sa.webhookCredentials != null) {
-                credentialsJson = mapper.writeValueAsString(sa.webhookCredentials);
-            }
         } catch (Exception ignored) {}
 
+        // Extract webhook credentials flat fields
+        var wc = sa.webhookCredentials;
+        String whAuthType = wc != null && wc.authType != null ? wc.authType.name() : null;
+        String whAuthTokenRef = wc != null ? wc.authTokenRef : null;
+        String whSigningSecretRef = wc != null ? wc.signingSecretRef : null;
+        String whSigningAlgorithm = wc != null && wc.signingAlgorithm != null ? wc.signingAlgorithm.name() : null;
+        Instant whCreatedAt = wc != null ? wc.createdAt : null;
+        Instant whRegeneratedAt = wc != null ? wc.regeneratedAt : null;
+
         if (dao.findById(sa.id).isPresent()) {
-            dao.update(sa, clientIdsArray, credentialsJson, rolesJson);
+            dao.update(sa, clientIdsArray, whAuthType, whAuthTokenRef, whSigningSecretRef,
+                      whSigningAlgorithm, whCreatedAt, whRegeneratedAt, rolesJson);
         } else {
-            dao.insert(sa, clientIdsArray, credentialsJson, rolesJson);
+            dao.insert(sa, clientIdsArray, whAuthType, whAuthTokenRef, whSigningSecretRef,
+                      whSigningAlgorithm, whCreatedAt, whRegeneratedAt, rolesJson);
         }
     }
 

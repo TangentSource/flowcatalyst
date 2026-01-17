@@ -39,25 +39,39 @@ public interface ServiceAccountDao {
 
     @SqlUpdate("""
         INSERT INTO service_accounts (id, code, name, description, client_ids, application_id,
-            active, webhook_credentials, roles, last_used_at, created_at, updated_at)
+            active, wh_auth_type, wh_auth_token_ref, wh_signing_secret_ref, wh_signing_algorithm,
+            wh_credentials_created_at, wh_credentials_regenerated_at, roles, last_used_at, created_at, updated_at)
         VALUES (:id, :code, :name, :description, :clientIds, :applicationId,
-            :active, :webhookCredentials::jsonb, :roles::jsonb, :lastUsedAt, :createdAt, :updatedAt)
+            :active, :whAuthType, :whAuthTokenRef, :whSigningSecretRef, :whSigningAlgorithm,
+            :whCredentialsCreatedAt, :whCredentialsRegeneratedAt, :roles::jsonb, :lastUsedAt, :createdAt, :updatedAt)
         """)
     void insert(@BindFields ServiceAccount serviceAccount,
                 @Bind("clientIds") String[] clientIdsArray,
-                @Bind("webhookCredentials") String webhookCredentialsJson,
+                @Bind("whAuthType") String whAuthType,
+                @Bind("whAuthTokenRef") String whAuthTokenRef,
+                @Bind("whSigningSecretRef") String whSigningSecretRef,
+                @Bind("whSigningAlgorithm") String whSigningAlgorithm,
+                @Bind("whCredentialsCreatedAt") java.time.Instant whCredentialsCreatedAt,
+                @Bind("whCredentialsRegeneratedAt") java.time.Instant whCredentialsRegeneratedAt,
                 @Bind("roles") String rolesJson);
 
     @SqlUpdate("""
         UPDATE service_accounts SET code = :code, name = :name, description = :description,
             client_ids = :clientIds, application_id = :applicationId, active = :active,
-            webhook_credentials = :webhookCredentials::jsonb, roles = :roles::jsonb,
-            last_used_at = :lastUsedAt, updated_at = :updatedAt
+            wh_auth_type = :whAuthType, wh_auth_token_ref = :whAuthTokenRef,
+            wh_signing_secret_ref = :whSigningSecretRef, wh_signing_algorithm = :whSigningAlgorithm,
+            wh_credentials_created_at = :whCredentialsCreatedAt, wh_credentials_regenerated_at = :whCredentialsRegeneratedAt,
+            roles = :roles::jsonb, last_used_at = :lastUsedAt, updated_at = :updatedAt
         WHERE id = :id
         """)
     void update(@BindFields ServiceAccount serviceAccount,
                 @Bind("clientIds") String[] clientIdsArray,
-                @Bind("webhookCredentials") String webhookCredentialsJson,
+                @Bind("whAuthType") String whAuthType,
+                @Bind("whAuthTokenRef") String whAuthTokenRef,
+                @Bind("whSigningSecretRef") String whSigningSecretRef,
+                @Bind("whSigningAlgorithm") String whSigningAlgorithm,
+                @Bind("whCredentialsCreatedAt") java.time.Instant whCredentialsCreatedAt,
+                @Bind("whCredentialsRegeneratedAt") java.time.Instant whCredentialsRegeneratedAt,
                 @Bind("roles") String rolesJson);
 
     @SqlUpdate("DELETE FROM service_accounts WHERE id = :id")

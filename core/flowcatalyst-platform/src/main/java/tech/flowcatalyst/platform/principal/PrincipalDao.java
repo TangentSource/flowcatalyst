@@ -18,7 +18,7 @@ public interface PrincipalDao {
     @SqlQuery("SELECT * FROM principals WHERE id = :id")
     Optional<Principal> findById(@Bind("id") String id);
 
-    @SqlQuery("SELECT * FROM principals WHERE user_identity->>'email' = :email")
+    @SqlQuery("SELECT * FROM principals WHERE email = :email")
     Optional<Principal> findByEmail(@Bind("email") String email);
 
     @SqlQuery("SELECT * FROM principals WHERE service_account->>'code' = :code")
@@ -61,14 +61,16 @@ public interface PrincipalDao {
     @SqlQuery("SELECT * FROM principals WHERE type = 'SERVICE' AND service_account->>'clientId' = :clientId")
     Optional<Principal> findByServiceAccountClientId(@Bind("clientId") String clientId);
 
-    @SqlQuery("SELECT COUNT(*) FROM principals WHERE user_identity->>'emailDomain' = :domain")
+    @SqlQuery("SELECT COUNT(*) FROM principals WHERE email_domain = :domain")
     long countByEmailDomain(@Bind("domain") String domain);
 
     @SqlUpdate("""
         INSERT INTO principals (id, type, scope, client_id, application_id, name, active,
-                               user_identity, service_account, roles, created_at, updated_at)
+                               email, email_domain, idp_type, external_idp_id, password_hash, last_login_at,
+                               service_account, roles, created_at, updated_at)
         VALUES (:id, :type, :scope, :clientId, :applicationId, :name, :active,
-                :userIdentity::jsonb, :serviceAccount::jsonb, :roles::jsonb, :createdAt, :updatedAt)
+                :email, :emailDomain, :idpType, :externalIdpId, :passwordHash, :lastLoginAt,
+                :serviceAccount::jsonb, :roles::jsonb, :createdAt, :updatedAt)
         """)
     void insert(
             @Bind("id") String id,
@@ -78,7 +80,12 @@ public interface PrincipalDao {
             @Bind("applicationId") String applicationId,
             @Bind("name") String name,
             @Bind("active") boolean active,
-            @Bind("userIdentity") String userIdentityJson,
+            @Bind("email") String email,
+            @Bind("emailDomain") String emailDomain,
+            @Bind("idpType") String idpType,
+            @Bind("externalIdpId") String externalIdpId,
+            @Bind("passwordHash") String passwordHash,
+            @Bind("lastLoginAt") Instant lastLoginAt,
             @Bind("serviceAccount") String serviceAccountJson,
             @Bind("roles") String rolesJson,
             @Bind("createdAt") Instant createdAt,
@@ -87,8 +94,9 @@ public interface PrincipalDao {
     @SqlUpdate("""
         UPDATE principals SET type = :type, scope = :scope, client_id = :clientId,
                application_id = :applicationId, name = :name, active = :active,
-               user_identity = :userIdentity::jsonb, service_account = :serviceAccount::jsonb,
-               roles = :roles::jsonb, updated_at = :updatedAt
+               email = :email, email_domain = :emailDomain, idp_type = :idpType,
+               external_idp_id = :externalIdpId, password_hash = :passwordHash, last_login_at = :lastLoginAt,
+               service_account = :serviceAccount::jsonb, roles = :roles::jsonb, updated_at = :updatedAt
         WHERE id = :id
         """)
     void update(
@@ -99,7 +107,12 @@ public interface PrincipalDao {
             @Bind("applicationId") String applicationId,
             @Bind("name") String name,
             @Bind("active") boolean active,
-            @Bind("userIdentity") String userIdentityJson,
+            @Bind("email") String email,
+            @Bind("emailDomain") String emailDomain,
+            @Bind("idpType") String idpType,
+            @Bind("externalIdpId") String externalIdpId,
+            @Bind("passwordHash") String passwordHash,
+            @Bind("lastLoginAt") Instant lastLoginAt,
             @Bind("serviceAccount") String serviceAccountJson,
             @Bind("roles") String rolesJson,
             @Bind("updatedAt") Instant updatedAt);

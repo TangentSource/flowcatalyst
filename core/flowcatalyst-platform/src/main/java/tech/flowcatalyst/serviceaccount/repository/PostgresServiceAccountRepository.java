@@ -129,22 +129,36 @@ class PostgresServiceAccountRepository implements ServiceAccountRepository {
     @Override
     public void persist(ServiceAccount serviceAccount) {
         String[] clientIdsArray = toStringArray(serviceAccount.clientIds);
-        String webhookCredentialsJson = JsonHelper.toJson(serviceAccount.webhookCredentials);
+        var wc = serviceAccount.webhookCredentials;
         String rolesJson = JsonHelper.toJsonArray(serviceAccount.roles);
 
         jdbi.useExtension(ServiceAccountDao.class, dao ->
-            dao.insert(serviceAccount, clientIdsArray, webhookCredentialsJson, rolesJson));
+            dao.insert(serviceAccount, clientIdsArray,
+                wc != null && wc.authType != null ? wc.authType.name() : null,
+                wc != null ? wc.authTokenRef : null,
+                wc != null ? wc.signingSecretRef : null,
+                wc != null && wc.signingAlgorithm != null ? wc.signingAlgorithm.name() : null,
+                wc != null ? wc.createdAt : null,
+                wc != null ? wc.regeneratedAt : null,
+                rolesJson));
     }
 
     @Override
     public void update(ServiceAccount serviceAccount) {
         serviceAccount.updatedAt = Instant.now();
         String[] clientIdsArray = toStringArray(serviceAccount.clientIds);
-        String webhookCredentialsJson = JsonHelper.toJson(serviceAccount.webhookCredentials);
+        var wc = serviceAccount.webhookCredentials;
         String rolesJson = JsonHelper.toJsonArray(serviceAccount.roles);
 
         jdbi.useExtension(ServiceAccountDao.class, dao ->
-            dao.update(serviceAccount, clientIdsArray, webhookCredentialsJson, rolesJson));
+            dao.update(serviceAccount, clientIdsArray,
+                wc != null && wc.authType != null ? wc.authType.name() : null,
+                wc != null ? wc.authTokenRef : null,
+                wc != null ? wc.signingSecretRef : null,
+                wc != null && wc.signingAlgorithm != null ? wc.signingAlgorithm.name() : null,
+                wc != null ? wc.createdAt : null,
+                wc != null ? wc.regeneratedAt : null,
+                rolesJson));
     }
 
     @Override

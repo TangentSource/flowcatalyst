@@ -2,9 +2,11 @@ package tech.flowcatalyst.serviceaccount.repository;
 
 import org.jdbi.v3.core.mapper.RowMapper;
 import org.jdbi.v3.core.statement.StatementContext;
+import tech.flowcatalyst.dispatchjob.model.SignatureAlgorithm;
 import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.shared.jdbi.JsonHelper;
 import tech.flowcatalyst.serviceaccount.entity.ServiceAccount;
+import tech.flowcatalyst.serviceaccount.entity.WebhookAuthType;
 import tech.flowcatalyst.serviceaccount.entity.WebhookCredentials;
 
 import java.sql.Array;
@@ -17,6 +19,7 @@ import java.util.List;
 
 /**
  * JDBI row mapper for ServiceAccount entity.
+ * Maps flat columns for webhook credentials and JSONB columns for roles.
  */
 public class ServiceAccountRowMapper implements RowMapper<ServiceAccount> {
 
@@ -39,10 +42,25 @@ public class ServiceAccountRowMapper implements RowMapper<ServiceAccount> {
             sa.clientIds = new ArrayList<>();
         }
 
-        // Map JSONB columns
-        String webhookCredentialsJson = rs.getString("webhook_credentials");
-        sa.webhookCredentials = JsonHelper.fromJson(webhookCredentialsJson, WebhookCredentials.class);
+        // Build WebhookCredentials from flat columns
+        String whAuthType = rs.getString("wh_auth_type");
+        String whAuthTokenRef = rs.getString("wh_auth_token_ref");
+        String whSigningSecretRef = rs.getString("wh_signing_secret_ref");
+        if (whAuthType != null || whAuthTokenRef != null || whSigningSecretRef != null) {
+            WebhookCredentials wc = new WebhookCredentials();
+            wc.authType = whAuthType != null ? WebhookAuthType.valueOf(whAuthType) : WebhookAuthType.BEARER_TOKEN;
+            wc.authTokenRef = whAuthTokenRef;
+            wc.signingSecretRef = whSigningSecretRef;
+            String whSigningAlgorithm = rs.getString("wh_signing_algorithm");
+            wc.signingAlgorithm = whSigningAlgorithm != null ? SignatureAlgorithm.valueOf(whSigningAlgorithm) : SignatureAlgorithm.HMAC_SHA256;
+            Timestamp whCreatedAt = rs.getTimestamp("wh_credentials_created_at");
+            wc.createdAt = whCreatedAt != null ? whCreatedAt.toInstant() : null;
+            Timestamp whRegeneratedAt = rs.getTimestamp("wh_credentials_regenerated_at");
+            wc.regeneratedAt = whRegeneratedAt != null ? whRegeneratedAt.toInstant() : null;
+            sa.webhookCredentials = wc;
+        }
 
+        // Map JSONB roles column
         String rolesJson = rs.getString("roles");
         sa.roles = JsonHelper.fromJsonList(rolesJson, Principal.RoleAssignment.class);
 

@@ -36,14 +36,14 @@ public interface EventDao {
     @SqlUpdate("""
         INSERT INTO events (id, spec_version, type, source, subject, time, data, correlation_id, causation_id,
                            deduplication_id, message_group, client_id, context_data, created_at)
-        VALUES (:id, :specVersion, :type, :source, :subject, :time, :data::jsonb, :correlationId, :causationId,
+        VALUES (:id, :specVersion, :type, :source, :subject, :time, :data, :correlationId, :causationId,
                 :deduplicationId, :messageGroup, :clientId, :contextData::jsonb, NOW())
         """)
     void insert(@BindFields Event event, @Bind("contextData") String contextDataJson);
 
     @SqlUpdate("""
         UPDATE events SET spec_version = :specVersion, type = :type, source = :source, subject = :subject,
-               time = :time, data = :data::jsonb, correlation_id = :correlationId, causation_id = :causationId,
+               time = :time, data = :data, correlation_id = :correlationId, causation_id = :causationId,
                deduplication_id = :deduplicationId, message_group = :messageGroup, client_id = :clientId,
                context_data = :contextData::jsonb
         WHERE id = :id

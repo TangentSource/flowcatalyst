@@ -2,6 +2,7 @@ package tech.flowcatalyst.platform.principal;
 
 import org.jdbi.v3.core.mapper.RowMapper;
 import org.jdbi.v3.core.statement.StatementContext;
+import tech.flowcatalyst.platform.authentication.IdpType;
 import tech.flowcatalyst.platform.shared.jdbi.JsonHelper;
 
 import java.sql.ResultSet;
@@ -10,7 +11,7 @@ import java.sql.Timestamp;
 
 /**
  * JDBI row mapper for Principal entity.
- * Handles JSONB columns for embedded objects (userIdentity, serviceAccount, roles).
+ * Maps flat columns for user identity and JSONB columns for serviceAccount and roles.
  */
 public class PrincipalRowMapper implements RowMapper<Principal> {
 
@@ -30,12 +31,22 @@ public class PrincipalRowMapper implements RowMapper<Principal> {
         p.name = rs.getString("name");
         p.active = rs.getBoolean("active");
 
-        // Parse JSONB columns
-        String userIdentityJson = rs.getString("user_identity");
-        if (userIdentityJson != null && !userIdentityJson.isEmpty()) {
-            p.userIdentity = JsonHelper.fromJson(userIdentityJson, UserIdentity.class);
+        // Build UserIdentity from flat columns
+        String email = rs.getString("email");
+        if (email != null) {
+            UserIdentity ui = new UserIdentity();
+            ui.email = email;
+            ui.emailDomain = rs.getString("email_domain");
+            String idpTypeStr = rs.getString("idp_type");
+            ui.idpType = idpTypeStr != null ? IdpType.valueOf(idpTypeStr) : null;
+            ui.externalIdpId = rs.getString("external_idp_id");
+            ui.passwordHash = rs.getString("password_hash");
+            Timestamp lastLoginAt = rs.getTimestamp("last_login_at");
+            ui.lastLoginAt = lastLoginAt != null ? lastLoginAt.toInstant() : null;
+            p.userIdentity = ui;
         }
 
+        // Parse JSONB columns
         String serviceAccountJson = rs.getString("service_account");
         if (serviceAccountJson != null && !serviceAccountJson.isEmpty()) {
             p.serviceAccount = JsonHelper.fromJson(serviceAccountJson, ServiceAccount.class);

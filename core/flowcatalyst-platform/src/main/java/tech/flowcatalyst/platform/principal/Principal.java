@@ -53,7 +53,8 @@ public class Principal {
     public Instant updatedAt = Instant.now();
 
     /**
-     * Embedded user identity (for USER type)
+     * Embedded user identity (for USER type).
+     * Fields are stored as flat columns in the database but assembled here for convenience.
      */
     public UserIdentity userIdentity;
 
