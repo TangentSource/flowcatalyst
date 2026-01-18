@@ -17,7 +17,7 @@ import {
 	UseCaseError,
 	DomainEvent as DomainEventUtils,
 } from '@flowcatalyst/domain-core';
-import { generate as generateTsid } from '@flowcatalyst/tsid';
+import { generate } from '@flowcatalyst/tsid';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type { AggregateRegistry } from './aggregate-registry.js';
 import type { TransactionContext, TransactionManager } from './transaction.js';
@@ -193,7 +193,7 @@ async function createAuditLogRecord(db: PostgresJsDatabase, event: DomainEvent, 
 	const operationName = getOperationName(command);
 
 	const newAuditLog: NewAuditLog = {
-		id: generateTsid(),
+		id: generate('AUDIT_LOG'),
 		entityType,
 		entityId: entityId ?? 'unknown',
 		operation: operationName,

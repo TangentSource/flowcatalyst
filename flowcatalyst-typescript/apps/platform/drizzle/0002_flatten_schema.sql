@@ -21,6 +21,7 @@ ALTER TABLE principals ADD COLUMN IF NOT EXISTS service_account JSONB;
 ALTER TABLE principals ADD COLUMN IF NOT EXISTS roles JSONB DEFAULT '[]'::jsonb;
 
 -- Migrate data from user_identities to principals
+-- Handle potential epoch timestamp format for last_login_at
 UPDATE principals p
 SET
     email = ui.email,

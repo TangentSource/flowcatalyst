@@ -12,7 +12,7 @@
  * - Audit trail via principalId
  */
 
-import { generate } from '@flowcatalyst/tsid';
+import { generateRaw } from '@flowcatalyst/tsid';
 import { TracingContext } from './tracing-context.js';
 import type { DomainEvent } from './domain-event.js';
 
@@ -36,7 +36,7 @@ export interface ExecutionContext {
  * Generate a new execution ID.
  */
 function generateExecutionId(): string {
-	return `exec-${generate()}`;
+	return `exec-${generateRaw()}`;
 }
 
 /**

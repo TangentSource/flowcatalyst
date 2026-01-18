@@ -14,6 +14,7 @@ import tech.flowcatalyst.platform.principal.Principal;
 import tech.flowcatalyst.platform.principal.PrincipalRepository;
 import tech.flowcatalyst.platform.principal.PrincipalType;
 import tech.flowcatalyst.platform.principal.events.ClientAccessGranted;
+import tech.flowcatalyst.platform.shared.EntityType;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
 
 import java.util.Map;
@@ -87,7 +88,7 @@ public class GrantClientAccessUseCase {
 
         // Create grant
         ClientAccessGrant grant = new ClientAccessGrant();
-        grant.id = TsidGenerator.generate();
+        grant.id = TsidGenerator.generate(EntityType.CLIENT_ACCESS_GRANT);
         grant.principalId = principal.id;
         grant.clientId = client.id;
         grant.expiresAt = command.expiresAt();

@@ -200,6 +200,6 @@ public class TracingContext {
     }
 
     private static String generateId() {
-        return "trace-" + TsidGenerator.generate();
+        return "trace-" + TsidGenerator.generateRaw();
     }
 }

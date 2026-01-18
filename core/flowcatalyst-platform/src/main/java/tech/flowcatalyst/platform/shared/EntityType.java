@@ -4,51 +4,62 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Defines all entity types in the system with their ID prefixes.
+ * Defines all entity types in the system with their 3-character ID prefixes.
  *
- * Following the Stripe/OpenAI pattern, IDs are serialized as "{prefix}_{tsid}"
- * for external APIs. This provides:
+ * Following the Stripe pattern, IDs are stored WITH the prefix in the database:
+ * - Format: "{prefix}_{tsid}" (e.g., "clt_0HZXEQ5Y8JY5Z")
+ * - Total length: 17 characters (3-char prefix + underscore + 13-char TSID)
  *
+ * This provides:
  * - Self-documenting IDs (immediately know the entity type)
  * - Type safety (can't accidentally pass wrong ID type)
  * - Easier debugging and support
- * - Clear API contracts
- *
- * Example: "client_0HZXEQ5Y8JY5Z" instead of just "0HZXEQ5Y8JY5Z"
+ * - No serialization/deserialization overhead
+ * - Consistent format across API, database, and logs
  *
  * Usage:
  * <pre>
- * String externalId = TypedId.serialize(EntityType.CLIENT, internalId);
- * String internalId = TypedId.deserialize(EntityType.CLIENT, externalId);
+ * String id = TsidGenerator.generate(EntityType.CLIENT);  // "clt_0HZXEQ5Y8JY5Z"
  * </pre>
  */
 public enum EntityType {
 
     // Core entities
-    CLIENT("client"),
-    PRINCIPAL("principal"),
+    CLIENT("clt"),
+    PRINCIPAL("prn"),
     APPLICATION("app"),
+    SERVICE_ACCOUNT("sac"),
 
     // Authorization
-    ROLE("role"),
-    PERMISSION("perm"),
+    ROLE("rol"),
+    PERMISSION("prm"),
 
     // Authentication
-    OAUTH_CLIENT("oauth"),
-    AUTH_CODE("authcode"),
+    OAUTH_CLIENT("oac"),
+    AUTH_CODE("acd"),
 
     // Configuration
-    CLIENT_AUTH_CONFIG("authcfg"),
-    APP_CLIENT_CONFIG("appcfg"),
-    IDP_ROLE_MAPPING("idpmap"),
-    CORS_ORIGIN("cors"),
-    ANCHOR_DOMAIN("anchor"),
+    CLIENT_AUTH_CONFIG("cac"),
+    APP_CLIENT_CONFIG("apc"),
+    IDP_ROLE_MAPPING("irm"),
+    CORS_ORIGIN("cor"),
+    ANCHOR_DOMAIN("anc"),
 
     // Access management
-    CLIENT_ACCESS_GRANT("grant"),
+    CLIENT_ACCESS_GRANT("gnt"),
+
+    // Events & Messaging
+    EVENT_TYPE("evt"),
+    EVENT("evn"),
+    EVENT_READ("evr"),
+    SUBSCRIPTION("sub"),
+    DISPATCH_POOL("dpl"),
+    DISPATCH_JOB("djb"),
+    DISPATCH_JOB_READ("djr"),
+    SCHEMA("sch"),
 
     // Audit
-    AUDIT_LOG("audit");
+    AUDIT_LOG("aud");
 
     private final String prefix;
 

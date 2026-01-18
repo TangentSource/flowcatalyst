@@ -7,10 +7,15 @@
 import { varchar, timestamp } from 'drizzle-orm/pg-core';
 
 /**
- * TSID column - 13-character Crockford Base32 string.
+ * Typed ID column - 17-character prefixed TSID.
+ * Format: "{prefix}_{tsid}" (e.g., "clt_0HZXEQ5Y8JY5Z")
+ * - 3-character prefix
+ * - 1 underscore separator
+ * - 13-character Crockford Base32 TSID
+ *
  * Used for all primary keys and foreign keys.
  */
-export const tsidColumn = (name: string) => varchar(name, { length: 13 });
+export const tsidColumn = (name: string) => varchar(name, { length: 17 });
 
 /**
  * Standard timestamp column with timezone.

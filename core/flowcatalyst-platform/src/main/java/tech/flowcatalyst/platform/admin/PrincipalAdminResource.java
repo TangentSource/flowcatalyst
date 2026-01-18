@@ -161,6 +161,9 @@ public class PrincipalAdminResource {
 
         auditContext.requirePrincipalId();
 
+        // Validate ID has correct type prefix
+        TypedId.Ops.validate(EntityType.PRINCIPAL, id);
+
         return principalRepo.findByIdOptional(id)
             .map(principal -> {
                 // Include roles and client access grants
@@ -237,6 +240,9 @@ public class PrincipalAdminResource {
         String adminPrincipalId = auditContext.requirePrincipalId();
         ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
 
+        // Validate ID has correct type prefix
+        TypedId.Ops.validate(EntityType.PRINCIPAL, id);
+
         UpdateUserCommand command = new UpdateUserCommand(id, request.name(), null);
         Result<UserUpdated> result = userOperations.updateUser(command, context);
 
@@ -266,6 +272,9 @@ public class PrincipalAdminResource {
 
         String adminPrincipalId = auditContext.requirePrincipalId();
         ExecutionContext context = ExecutionContext.from(tracingContext, adminPrincipalId);
+
+        // Validate ID has correct type prefix
+        TypedId.Ops.validate(EntityType.PRINCIPAL, id);
 
         ActivateUserCommand command = new ActivateUserCommand(id);
         Result<UserActivated> result = userOperations.activateUser(command, context);
@@ -597,17 +606,17 @@ public class PrincipalAdminResource {
 
         boolean isAnchorUser = clientAccessService.isAnchorDomainUser(principal);
 
-        // Get granted client IDs with typed prefix
+        // Get granted client IDs (already prefixed in database)
         List<ClientAccessGrant> grants = grantRepo.findByPrincipalId(principal.id);
         Set<String> grantedClientIds = grants.stream()
-            .map(g -> TypedId.Ops.serialize(EntityType.CLIENT, g.clientId))
+            .map(g -> g.clientId)
             .collect(Collectors.toSet());
 
         return new PrincipalDto(
-            TypedId.Ops.serialize(EntityType.PRINCIPAL, principal.id),
+            principal.id,  // Already prefixed
             principal.type,
             principal.scope,
-            TypedId.Ops.serialize(EntityType.CLIENT, principal.clientId),
+            principal.clientId,  // Already prefixed
             principal.name,
             principal.active,
             email,
@@ -632,16 +641,12 @@ public class PrincipalAdminResource {
 
         boolean isAnchorUser = clientAccessService.isAnchorDomainUser(principal);
 
-        // Serialize client IDs with typed prefix
-        Set<String> grantedClientIdsTyped = grantedClientIds.stream()
-            .map(id -> TypedId.Ops.serialize(EntityType.CLIENT, id))
-            .collect(Collectors.toSet());
-
+        // Client IDs are already prefixed in the database
         return new PrincipalDetailDto(
-            TypedId.Ops.serialize(EntityType.PRINCIPAL, principal.id),
+            principal.id,  // Already prefixed
             principal.type,
             principal.scope,
-            TypedId.Ops.serialize(EntityType.CLIENT, principal.clientId),
+            principal.clientId,  // Already prefixed
             principal.name,
             principal.active,
             email,
@@ -649,7 +654,7 @@ public class PrincipalAdminResource {
             lastLoginAt,
             roles,
             isAnchorUser,
-            grantedClientIdsTyped,
+            grantedClientIds,  // Already prefixed
             principal.createdAt,
             principal.updatedAt
         );

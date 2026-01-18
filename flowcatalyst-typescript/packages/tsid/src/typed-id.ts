@@ -1,58 +1,69 @@
 /**
- * TypedId - Prefixed ID Serialization
+ * TypedId - Prefixed ID Validation and Utilities
  *
- * Following the Stripe/OpenAI pattern, IDs are serialized as "{prefix}_{tsid}"
- * for external APIs. This provides:
+ * Following the Stripe pattern, IDs are stored WITH the prefix in the database:
+ * - Format: "{prefix}_{tsid}" (e.g., "clt_0HZXEQ5Y8JY5Z")
+ * - Total length: 17 characters (3-char prefix + underscore + 13-char TSID)
  *
+ * This provides:
  * - Self-documenting IDs (immediately know the entity type)
  * - Type safety (can't accidentally pass wrong ID type)
  * - Easier debugging and support
- * - Clear API contracts
+ * - No serialization/deserialization overhead
+ * - Consistent format across API, database, and logs
  *
- * Example: "client_0HZXEQ5Y8JY5Z" instead of just "0HZXEQ5Y8JY5Z"
+ * Example: "clt_0HZXEQ5Y8JY5Z" is stored in the database as-is
  */
 
-import { isValid } from './tsid.js';
+import { isValid, generate as generateRawTsid } from './tsid.js';
 
 /**
- * Entity types with their ID prefixes.
+ * Entity types with their 3-character ID prefixes.
  * Matches Java EntityType enum exactly.
  */
 export const EntityType = {
 	// Core entities
-	CLIENT: 'client',
-	PRINCIPAL: 'principal',
+	CLIENT: 'clt',
+	PRINCIPAL: 'prn',
 	APPLICATION: 'app',
+	SERVICE_ACCOUNT: 'sac',
 
 	// Authorization
-	ROLE: 'role',
-	PERMISSION: 'perm',
+	ROLE: 'rol',
+	PERMISSION: 'prm',
 
 	// Authentication
-	OAUTH_CLIENT: 'oauth',
-	AUTH_CODE: 'authcode',
+	OAUTH_CLIENT: 'oac',
+	AUTH_CODE: 'acd',
 
 	// Configuration
-	CLIENT_AUTH_CONFIG: 'authcfg',
-	APP_CLIENT_CONFIG: 'appcfg',
-	IDP_ROLE_MAPPING: 'idpmap',
-	CORS_ORIGIN: 'cors',
-	ANCHOR_DOMAIN: 'anchor',
+	CLIENT_AUTH_CONFIG: 'cac',
+	APP_CLIENT_CONFIG: 'apc',
+	IDP_ROLE_MAPPING: 'irm',
+	CORS_ORIGIN: 'cor',
+	ANCHOR_DOMAIN: 'anc',
 
 	// Access management
-	CLIENT_ACCESS_GRANT: 'grant',
+	CLIENT_ACCESS_GRANT: 'gnt',
+
+	// Events & Messaging
+	EVENT_TYPE: 'evt',
+	EVENT: 'evn',
+	EVENT_READ: 'evr',
+	SUBSCRIPTION: 'sub',
+	DISPATCH_POOL: 'dpl',
+	DISPATCH_JOB: 'djb',
+	DISPATCH_JOB_READ: 'djr',
+	SCHEMA: 'sch',
 
 	// Audit
-	AUDIT_LOG: 'audit',
-
-	// Event system
-	EVENT_TYPE: 'evtype',
-	EVENT: 'event',
-	SUBSCRIPTION: 'sub',
-	DISPATCH_POOL: 'pool',
-	DISPATCH_JOB: 'job',
-	SERVICE_ACCOUNT: 'svc',
+	AUDIT_LOG: 'aud',
 } as const;
+
+/**
+ * Separator between prefix and TSID
+ */
+export const SEPARATOR = '_';
 
 export type EntityTypeKey = keyof typeof EntityType;
 export type EntityTypePrefix = (typeof EntityType)[EntityTypeKey];
@@ -61,6 +72,24 @@ export type EntityTypePrefix = (typeof EntityType)[EntityTypeKey];
 const PREFIX_TO_TYPE: Record<string, EntityTypeKey> = {};
 for (const [key, prefix] of Object.entries(EntityType)) {
 	PREFIX_TO_TYPE[prefix] = key as EntityTypeKey;
+}
+
+/**
+ * Pattern for valid typed IDs (3-char prefix + underscore + 13-char TSID).
+ * Example: "clt_0HZXEQ5Y8JY5Z"
+ */
+const TYPED_ID_PATTERN = /^[a-z]{3}_[0-9A-HJKMNP-TV-Z]{13}$/i;
+
+/**
+ * Generate a new typed ID with the specified entity type prefix.
+ * This is the primary function for generating new IDs.
+ *
+ * @param type - The entity type
+ * @returns A typed ID (e.g., "clt_0HZXEQ5Y8JY5Z")
+ */
+export function generate(type: EntityTypeKey): string {
+	const prefix = EntityType[type];
+	return `${prefix}${SEPARATOR}${generateRawTsid()}`;
 }
 
 /**
@@ -90,11 +119,72 @@ export class TypedIdError extends Error {
 }
 
 /**
- * Serialize an internal TSID to external prefixed format.
+ * Validate that an ID has the correct format and entity type.
  *
- * @param type - The entity type
- * @param id - The internal TSID string (13 chars), or null/undefined
- * @returns The external prefixed ID (e.g., "client_0HZXEQ5Y8JY5Z"), or null if id is null/undefined
+ * @param type - The expected entity type
+ * @param id - The typed ID (e.g., "clt_0HZXEQ5Y8JY5Z")
+ * @throws TypedIdError if the ID is malformed or wrong type
+ */
+export function validate(type: EntityTypeKey, id: string): void {
+	if (!id || id.trim() === '') {
+		throw new TypedIdError('ID cannot be null or blank', 'empty', type, undefined, id);
+	}
+
+	const separatorIndex = id.indexOf(SEPARATOR);
+	if (separatorIndex === -1) {
+		throw new TypedIdError(
+			`Invalid ID format: expected '${EntityType[type]}_<id>' but got '${id}'`,
+			'missing_separator',
+			type,
+			undefined,
+			id,
+		);
+	}
+
+	const prefix = id.slice(0, separatorIndex);
+	const rawId = id.slice(separatorIndex + 1);
+
+	const actualType = PREFIX_TO_TYPE[prefix];
+	if (!actualType) {
+		throw new TypedIdError(`Unknown ID prefix '${prefix}'`, 'unknown_prefix', type, undefined, id);
+	}
+
+	if (actualType !== type) {
+		throw new TypedIdError(
+			`ID type mismatch. Expected '${EntityType[type]}' but got '${prefix}'`,
+			'type_mismatch',
+			type,
+			actualType,
+			id,
+		);
+	}
+
+	if (!isValid(rawId)) {
+		throw new TypedIdError(`Invalid TSID format in ID '${id}'`, 'invalid_tsid', type, undefined, id);
+	}
+}
+
+/**
+ * Validate an ID if present, returning null for null/blank inputs.
+ *
+ * @param type - The expected entity type
+ * @param id - The typed ID, may be null/undefined
+ * @returns The ID if valid, or null if input is null/blank
+ * @throws TypedIdError if the ID is present but invalid
+ */
+export function validateOrNull(type: EntityTypeKey, id: string | null | undefined): string | null {
+	if (id === null || id === undefined || id.trim() === '') {
+		return null;
+	}
+	validate(type, id);
+	return id;
+}
+
+/**
+ * @deprecated IDs are now stored with prefixes. Use generate() for new IDs.
+ *
+ * Serialize an internal TSID to external prefixed format.
+ * Kept for backwards compatibility during migration.
  */
 export function serialize(type: EntityTypeKey, id: string): string;
 export function serialize(type: EntityTypeKey, id: null | undefined): null;
@@ -103,68 +193,25 @@ export function serialize(type: EntityTypeKey, id: string | null | undefined): s
 	if (id === null || id === undefined) {
 		return null;
 	}
+	// If ID already has a prefix, return as-is
+	if (id.includes(SEPARATOR)) {
+		return id;
+	}
 	const prefix = EntityType[type];
-	return `${prefix}_${id}`;
+	return `${prefix}${SEPARATOR}${id}`;
 }
 
 /**
- * Deserialize an external prefixed ID to internal TSID.
+ * @deprecated IDs are now stored with prefixes. Use validate() to verify IDs.
  *
- * @param type - The expected entity type
- * @param externalId - The external prefixed ID (e.g., "client_0HZXEQ5Y8JY5Z")
- * @returns The internal TSID string (13 chars)
- * @throws TypedIdError if the ID format is invalid or type doesn't match
+ * Deserialize an external prefixed ID to internal TSID.
+ * Kept for backwards compatibility during migration.
  */
 export function deserialize(type: EntityTypeKey, externalId: string): string {
-	// Check for null/blank input
-	if (!externalId || externalId.trim() === '') {
-		throw new TypedIdError('ID cannot be null or blank', 'empty', type, undefined, externalId);
-	}
-
-	const expectedPrefix = EntityType[type];
-	const prefixWithSeparator = `${expectedPrefix}_`;
-
-	if (!externalId.startsWith(prefixWithSeparator)) {
-		// Check if it has no separator at all
-		if (!externalId.includes('_')) {
-			throw new TypedIdError(
-				`Invalid ID format: expected prefix '${expectedPrefix}_'`,
-				'missing_separator',
-				type,
-				undefined,
-				externalId,
-			);
-		}
-
-		// Check if it's a different entity type
-		const parsed = parseAny(externalId);
-		if (parsed.type !== null && parsed.type !== type) {
-			throw new TypedIdError(
-				`Expected ${type} ID with prefix '${expectedPrefix}_', but got ${parsed.type} ID`,
-				'type_mismatch',
-				type,
-				parsed.type,
-				externalId,
-			);
-		}
-
-		// Has separator but unknown prefix
-		throw new TypedIdError(
-			`Invalid ID format: unrecognized prefix`,
-			'unknown_prefix',
-			type,
-			undefined,
-			externalId,
-		);
-	}
-
-	const id = externalId.slice(prefixWithSeparator.length);
-
-	if (!isValid(id)) {
-		throw new TypedIdError(`Invalid TSID format in ID: ${id}`, 'invalid_tsid', type, undefined, externalId);
-	}
-
-	return id;
+	validate(type, externalId);
+	// Extract raw ID (though in new code, the prefixed ID is the canonical form)
+	const separatorIndex = externalId.indexOf(SEPARATOR);
+	return externalId.slice(separatorIndex + 1);
 }
 
 /**
@@ -187,19 +234,65 @@ export function deserializeOrNull(type: EntityTypeKey, externalId: string | null
 }
 
 /**
- * Check if an external ID is valid for the given type.
+ * Check if a typed ID is valid for the given type.
  *
  * @param type - The expected entity type
- * @param externalId - The external prefixed ID
+ * @param id - The typed ID
  * @returns true if valid, false otherwise
  */
-export function isValidTypedId(type: EntityTypeKey, externalId: string): boolean {
+export function isValidTypedId(type: EntityTypeKey, id: string): boolean {
 	try {
-		deserialize(type, externalId);
+		validate(type, id);
 		return true;
 	} catch {
 		return false;
 	}
+}
+
+/**
+ * Check if a string is a valid typed ID format (any type).
+ *
+ * @param id - The potential typed ID
+ * @returns true if valid format, false otherwise
+ */
+export function isValidFormat(id: string): boolean {
+	return TYPED_ID_PATTERN.test(id);
+}
+
+/**
+ * Extract the raw TSID portion from a typed ID.
+ *
+ * @param id - The typed ID (e.g., "clt_0HZXEQ5Y8JY5Z")
+ * @returns The raw TSID (e.g., "0HZXEQ5Y8JY5Z")
+ * @throws Error if the ID format is invalid
+ */
+export function extractRawId(id: string): string {
+	if (!id || id.trim() === '') {
+		throw new Error('ID cannot be null or blank');
+	}
+	const separatorIndex = id.indexOf(SEPARATOR);
+	if (separatorIndex === -1) {
+		throw new Error('Invalid typed ID format: missing separator');
+	}
+	return id.slice(separatorIndex + 1);
+}
+
+/**
+ * Extract the prefix from a typed ID.
+ *
+ * @param id - The typed ID (e.g., "clt_0HZXEQ5Y8JY5Z")
+ * @returns The prefix (e.g., "clt")
+ * @throws Error if the ID format is invalid
+ */
+export function extractPrefix(id: string): string {
+	if (!id || id.trim() === '') {
+		throw new Error('ID cannot be null or blank');
+	}
+	const separatorIndex = id.indexOf(SEPARATOR);
+	if (separatorIndex === -1) {
+		throw new Error('Invalid typed ID format: missing separator');
+	}
+	return id.slice(0, separatorIndex);
 }
 
 /**

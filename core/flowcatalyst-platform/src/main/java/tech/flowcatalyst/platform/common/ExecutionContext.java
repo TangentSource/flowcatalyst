@@ -52,7 +52,7 @@ public record ExecutionContext(
             return fromTracingContext(threadLocalCtx, principalId);
         }
 
-        String execId = "exec-" + TsidGenerator.generate();
+        String execId = "exec-" + TsidGenerator.generateRaw();
         return new ExecutionContext(
             execId,
             execId,  // correlation starts as execution ID
@@ -77,7 +77,7 @@ public record ExecutionContext(
     }
 
     private static ExecutionContext fromTracingContext(TracingContext tracingContext, String principalId) {
-        String execId = "exec-" + TsidGenerator.generate();
+        String execId = "exec-" + TsidGenerator.generateRaw();
         return new ExecutionContext(
             execId,
             tracingContext.getCorrelationId(),  // uses existing or generates new
@@ -99,7 +99,7 @@ public record ExecutionContext(
      */
     public static ExecutionContext withCorrelation(String principalId, String correlationId) {
         return new ExecutionContext(
-            "exec-" + TsidGenerator.generate(),
+            "exec-" + TsidGenerator.generateRaw(),
             correlationId,
             null,
             principalId,
@@ -120,7 +120,7 @@ public record ExecutionContext(
      */
     public static ExecutionContext fromParentEvent(DomainEvent parent, String principalId) {
         return new ExecutionContext(
-            "exec-" + TsidGenerator.generate(),
+            "exec-" + TsidGenerator.generateRaw(),
             parent.correlationId(),
             parent.eventId(),
             principalId,

@@ -16,7 +16,7 @@
  */
 
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { generate } from '@flowcatalyst/tsid';
+import { generateRaw } from '@flowcatalyst/tsid';
 
 /**
  * Tracing context data stored in AsyncLocalStorage.
@@ -35,7 +35,7 @@ const storage = new AsyncLocalStorage<TracingContextData>();
  * Generate a trace ID.
  */
 function generateTraceId(): string {
-	return `trace-${generate()}`;
+	return `trace-${generateRaw()}`;
 }
 
 /**

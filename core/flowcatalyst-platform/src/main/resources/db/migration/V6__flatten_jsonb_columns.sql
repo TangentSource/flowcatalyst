@@ -19,9 +19,12 @@ SET email = user_identity->>'email',
     external_idp_id = user_identity->>'externalIdpId',
     password_hash = user_identity->>'passwordHash',
     last_login_at = CASE
-        WHEN user_identity->>'lastLoginAt' IS NOT NULL
-        THEN (user_identity->>'lastLoginAt')::timestamptz
-        ELSE NULL
+        WHEN user_identity->>'lastLoginAt' IS NULL THEN NULL
+        -- Handle Unix epoch format (numeric string like "1768565525.708297000")
+        WHEN user_identity->>'lastLoginAt' ~ '^\d+\.?\d*$'
+        THEN to_timestamp((user_identity->>'lastLoginAt')::double precision)
+        -- Handle ISO date format
+        ELSE (user_identity->>'lastLoginAt')::timestamptz
     END
 WHERE user_identity IS NOT NULL;
 
@@ -44,14 +47,16 @@ SET wh_auth_type = COALESCE(webhook_credentials->>'authType', 'BEARER_TOKEN'),
     wh_signing_secret_ref = webhook_credentials->>'signingSecretRef',
     wh_signing_algorithm = COALESCE(webhook_credentials->>'signingAlgorithm', 'HMAC_SHA256'),
     wh_credentials_created_at = CASE
-        WHEN webhook_credentials->>'createdAt' IS NOT NULL
-        THEN (webhook_credentials->>'createdAt')::timestamptz
-        ELSE NULL
+        WHEN webhook_credentials->>'createdAt' IS NULL THEN NULL
+        WHEN webhook_credentials->>'createdAt' ~ '^\d+\.?\d*$'
+        THEN to_timestamp((webhook_credentials->>'createdAt')::double precision)
+        ELSE (webhook_credentials->>'createdAt')::timestamptz
     END,
     wh_credentials_regenerated_at = CASE
-        WHEN webhook_credentials->>'regeneratedAt' IS NOT NULL
-        THEN (webhook_credentials->>'regeneratedAt')::timestamptz
-        ELSE NULL
+        WHEN webhook_credentials->>'regeneratedAt' IS NULL THEN NULL
+        WHEN webhook_credentials->>'regeneratedAt' ~ '^\d+\.?\d*$'
+        THEN to_timestamp((webhook_credentials->>'regeneratedAt')::double precision)
+        ELSE (webhook_credentials->>'regeneratedAt')::timestamptz
     END
 WHERE webhook_credentials IS NOT NULL;
 

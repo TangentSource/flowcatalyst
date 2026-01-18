@@ -17,6 +17,7 @@ import tech.flowcatalyst.platform.principal.PrincipalRepository;
 import tech.flowcatalyst.platform.principal.PrincipalType;
 import tech.flowcatalyst.platform.principal.UserIdentity;
 import tech.flowcatalyst.platform.principal.events.UserCreated;
+import tech.flowcatalyst.platform.shared.EntityType;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
 
 import java.util.Map;
@@ -118,7 +119,7 @@ public class CreateUserUseCase {
 
         // Create principal
         Principal principal = new Principal();
-        principal.id = TsidGenerator.generate();
+        principal.id = TsidGenerator.generate(EntityType.PRINCIPAL);
         principal.type = PrincipalType.USER;
         principal.clientId = command.clientId();
         principal.name = command.name();

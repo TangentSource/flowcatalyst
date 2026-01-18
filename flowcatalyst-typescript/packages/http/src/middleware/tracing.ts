@@ -9,7 +9,7 @@
  */
 
 import type { MiddlewareHandler } from 'hono';
-import { generate as generateTsid } from '@flowcatalyst/tsid';
+import { generateRaw } from '@flowcatalyst/tsid';
 import type { FlowCatalystEnv, TracingMiddlewareConfig, TracingData } from '../types.js';
 
 /** Default header names */
@@ -56,14 +56,14 @@ export function tracingMiddleware(config: TracingMiddlewareConfig = {}): Middlew
 			correlationId = c.req.header(requestIdHeader);
 		}
 		if (!correlationId) {
-			correlationId = `trace-${generateTsid()}`;
+			correlationId = `trace-${generateRaw()}`;
 		}
 
 		// Extract causation ID from headers (may be null)
 		const causationId = c.req.header(causationIdHeader) ?? null;
 
 		// Generate unique execution ID for this request
-		const executionId = `exec-${generateTsid()}`;
+		const executionId = `exec-${generateRaw()}`;
 
 		// Store tracing data in context
 		const tracingData: TracingData = {

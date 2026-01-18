@@ -6,6 +6,7 @@ import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.NotFoundException;
 import tech.flowcatalyst.platform.authentication.IdpType;
 import tech.flowcatalyst.platform.principal.PrincipalRepository;
+import tech.flowcatalyst.platform.shared.EntityType;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
 
 import java.time.Instant;
@@ -59,7 +60,7 @@ public class UserService {
 
         // Create principal
         Principal principal = new Principal();
-        principal.id = TsidGenerator.generate();
+        principal.id = TsidGenerator.generate(EntityType.PRINCIPAL);
         principal.type = PrincipalType.USER;
         principal.scope = effectiveScope;
         principal.clientId = clientId;
@@ -114,7 +115,7 @@ public class UserService {
 
         // Create new OIDC user
         Principal principal = new Principal();
-        principal.id = TsidGenerator.generate();
+        principal.id = TsidGenerator.generate(EntityType.PRINCIPAL);
         principal.type = PrincipalType.USER;
         principal.scope = effectiveScope;
         principal.clientId = clientId;
