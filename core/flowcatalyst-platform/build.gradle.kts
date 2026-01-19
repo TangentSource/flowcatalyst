@@ -3,6 +3,7 @@ plugins {
     id("io.quarkus")
     id("org.kordamp.gradle.jandex") version "2.0.0"
     id("com.google.cloud.tools.jib") version "3.4.0"
+    id("nu.studer.jooq") version "9.0"
 }
 
 repositories {
@@ -33,15 +34,26 @@ dependencies {
     implementation("io.quarkus:quarkus-rest-jackson")
 
     // ==========================================================================
-    // Database - PostgreSQL + JDBI + Flyway
+    // Database - PostgreSQL + Flyway + Panache + QueryDSL
     // ==========================================================================
     implementation("io.quarkus:quarkus-agroal")           // Connection pool
     implementation("io.quarkus:quarkus-jdbc-postgresql")  // PostgreSQL driver
     implementation("io.quarkus:quarkus-flyway")           // Schema migrations
-    implementation("org.jdbi:jdbi3-core:3.45.0")
-    implementation("org.jdbi:jdbi3-sqlobject:3.45.0")
-    implementation("org.jdbi:jdbi3-postgres:3.45.0")
-    implementation("org.jdbi:jdbi3-jackson2:3.45.0")      // For JSONB mapping
+
+    // Panache - Repository pattern for Hibernate ORM
+    implementation("io.quarkus:quarkus-hibernate-orm-panache")
+
+    // QueryDSL (openfeign fork) - Type-safe dynamic queries
+    implementation("io.github.openfeign.querydsl:querydsl-jpa:5.1.0:jakarta")
+    annotationProcessor("io.github.openfeign.querydsl:querydsl-apt:5.1.0:jakarta")
+
+    // JOOQ - Type-safe SQL DSL (kept temporarily during migration)
+    implementation("org.jooq:jooq:3.19.17")
+    implementation("org.jooq:jooq-meta:3.19.17")
+
+    // JOOQ code generation dependencies (DDL-based generation from Flyway migrations)
+    jooqGenerator("org.jooq:jooq-meta:3.19.17")
+    jooqGenerator("org.jooq:jooq-meta-extensions:3.19.17")
 
     // Keep MongoDB temporarily for data migration
     implementation("io.quarkus:quarkus-mongodb-client")
@@ -239,5 +251,122 @@ jib {
         labels.put("version", project.version.toString())
         creationTime.set("USE_CURRENT_TIMESTAMP")
         user = "1000:1000"
+    }
+}
+
+// ==========================================================================
+// JOOQ Code Generation Configuration
+// ==========================================================================
+// Generates type-safe DSL classes from Flyway DDL migration files.
+// No database connection required - parses SQL files directly.
+//
+// Usage:
+//   ./gradlew generateJooq
+//
+// Generated output: src/main/java/tech/flowcatalyst/platform/jooq/generated/
+
+jooq {
+    version.set("3.19.17")
+    edition.set(nu.studer.gradle.jooq.JooqEdition.OSS)
+
+    configurations {
+        create("main") {
+            generateSchemaSourceOnCompilation.set(false)  // Manual generation only
+
+            jooqConfiguration.apply {
+                logging = org.jooq.meta.jaxb.Logging.WARN
+
+                generator.apply {
+                    name = "org.jooq.codegen.JavaGenerator"
+
+                    database.apply {
+                        // Use DDLDatabase to parse SQL migration files
+                        name = "org.jooq.meta.extensions.ddl.DDLDatabase"
+
+                        // Parse consolidated schema file (final state after all migrations)
+                        properties.add(org.jooq.meta.jaxb.Property().apply {
+                            key = "scripts"
+                            value = "src/main/resources/db/jooq/schema.sql"
+                        })
+
+                        // Use PostgreSQL dialect for parsing
+                        properties.add(org.jooq.meta.jaxb.Property().apply {
+                            key = "defaultNameCase"
+                            value = "lower"
+                        })
+
+                        // Include all tables
+                        includes = ".*"
+
+                        // Exclude Flyway migration tracking table
+                        excludes = "flyway_schema_history"
+
+                        // Force types for specific columns
+                        forcedTypes.addAll(listOf(
+                            // Map TIMESTAMPTZ to java.time.Instant
+                            org.jooq.meta.jaxb.ForcedType().apply {
+                                name = "INSTANT"
+                                includeTypes = "TIMESTAMPTZ"
+                            },
+                            // Map JSONB to String for manual handling
+                            org.jooq.meta.jaxb.ForcedType().apply {
+                                userType = "java.lang.String"
+                                includeTypes = "JSONB"
+                                converter = "tech.flowcatalyst.platform.jooq.converters.JsonbStringConverter"
+                            }
+                        ))
+                    }
+
+                    generate.apply {
+                        // Generate POJOs for domain mapping
+                        isPojos = true
+                        isPojosEqualsAndHashCode = true
+                        isPojosToString = true
+                        isImmutablePojos = false  // Mutable for easy mapping
+
+                        // Generate fluent setters for builders
+                        isFluentSetters = true
+
+                        // Generate DAOs for basic CRUD
+                        isDaos = true
+
+                        // Generate records
+                        isRecords = true
+
+                        // Use Java 8+ date/time types
+                        isJavaTimeTypes = true
+
+                        // Generate deprecated annotations for deprecated columns
+                        isDeprecated = false
+
+                        // Generate indexes
+                        isIndexes = true
+
+                        // Generate keys
+                        isKeys = true
+
+                        // Do not generate global object references
+                        isGlobalObjectReferences = false
+                        isGlobalCatalogReferences = false
+                        isGlobalSchemaReferences = false
+
+                        // Use annotations
+                        isGeneratedAnnotation = true
+                        generatedAnnotationType = org.jooq.meta.jaxb.GeneratedAnnotationType.DETECT_FROM_JDK
+
+                        // Nullable annotations
+                        isNullableAnnotation = true
+                        nullableAnnotationType = "jakarta.annotation.Nullable"
+                        isNonnullAnnotation = true
+                        nonnullAnnotationType = "jakarta.annotation.Nonnull"
+                    }
+
+                    target.apply {
+                        packageName = "tech.flowcatalyst.platform.jooq.generated"
+                        directory = "src/main/java"
+                    }
+                }
+            }
+        }
     }
 }

@@ -3,22 +3,22 @@
  *
  * Pino-based structured logging with automatic tracing context injection.
  * Creates request-scoped loggers that include correlation and execution IDs.
+ *
+ * Fastify uses Pino natively, so this module provides utilities for
+ * configuring logging and creating child loggers with tracing context.
  */
 
 import pino, { type Logger, type LoggerOptions } from 'pino';
-import type { MiddlewareHandler } from 'hono';
-import type { FlowCatalystEnv, TracingData } from './types.js';
+import type { TracingData } from './types.js';
 
 /**
- * Configuration for the logging middleware.
+ * Configuration for logging.
  */
 export interface LoggingConfig {
 	/** Log level (default: 'info') */
 	readonly level?: string;
 	/** Service name for log context */
 	readonly serviceName?: string;
-	/** Whether to log request/response details (default: true) */
-	readonly logRequests?: boolean;
 	/** Paths to skip logging (e.g., /health) */
 	readonly skipPaths?: string[];
 	/** Additional base context to include in all logs */
@@ -37,7 +37,7 @@ export interface LoggingConfig {
  * ```typescript
  * const logger = createLogger({
  *     level: 'info',
- *     serviceName: 'control-plane',
+ *     serviceName: 'platform',
  * });
  *
  * logger.info({ userId: '123' }, 'User created');
@@ -75,94 +75,38 @@ export function createRequestLogger(baseLogger: Logger, tracing: TracingData): L
 }
 
 /**
- * Create logging middleware for Hono.
+ * Create Fastify logger options.
  *
- * Attaches a request-scoped logger to the context with tracing fields.
- * Optionally logs request and response details.
+ * Fastify uses Pino internally, so this creates compatible logger options.
  *
- * @param baseLogger - The base Pino logger
  * @param config - Logging configuration
- * @returns Hono middleware handler
+ * @returns Pino logger options for Fastify
  *
  * @example
  * ```typescript
- * import { Hono } from 'hono';
- * import { tracingMiddleware, loggingMiddleware, createLogger } from '@flowcatalyst/http';
+ * import Fastify from 'fastify';
+ * import { createFastifyLoggerOptions } from '@flowcatalyst/http';
  *
- * const logger = createLogger({ serviceName: 'api' });
- * const app = new Hono<FlowCatalystEnv>();
- *
- * app.use('*', tracingMiddleware());
- * app.use('*', loggingMiddleware(logger));
- *
- * app.get('/api/users', (c) => {
- *     const log = c.get('log');
- *     log.info('Fetching users');  // Automatically includes correlationId, executionId
- *     return c.json({ users: [] });
+ * const fastify = Fastify({
+ *     logger: createFastifyLoggerOptions({
+ *         level: 'info',
+ *         serviceName: 'platform',
+ *     }),
  * });
  * ```
  */
-export function loggingMiddleware(
-	baseLogger: Logger,
-	config: LoggingConfig = {},
-): MiddlewareHandler<FlowCatalystEnv> {
-	const { logRequests = true, skipPaths = [] } = config;
+export function createFastifyLoggerOptions(config: LoggingConfig = {}): LoggerOptions | boolean {
+	const { level = 'info', serviceName, baseContext = {}, pinoOptions = {} } = config;
 
-	return async (c, next) => {
-		const path = new URL(c.req.url).pathname;
-
-		// Check if path should be skipped
-		const shouldSkip = skipPaths.some((skip) => path.startsWith(skip));
-
-		// Get tracing context (should be set by tracingMiddleware)
-		const tracing = c.get('tracing');
-		if (!tracing) {
-			// If no tracing, use base logger
-			c.set('log', baseLogger);
-			return next();
-		}
-
-		// Create request-scoped logger with tracing context
-		const log = createRequestLogger(baseLogger, tracing);
-		c.set('log', log);
-
-		// Log request start
-		if (logRequests && !shouldSkip) {
-			log.info(
-				{
-					method: c.req.method,
-					path,
-					userAgent: c.req.header('user-agent'),
-				},
-				'Request started',
-			);
-		}
-
-		// Execute handlers
-		await next();
-
-		// Log request completion
-		if (logRequests && !shouldSkip) {
-			const duration = Date.now() - tracing.startTime;
-			log.info(
-				{
-					method: c.req.method,
-					path,
-					status: c.res.status,
-					durationMs: duration,
-				},
-				'Request completed',
-			);
-		}
+	return {
+		level,
+		...pinoOptions,
+		base: {
+			...(serviceName ? { service: serviceName } : {}),
+			...baseContext,
+			...pinoOptions.base,
+		},
 	};
 }
 
-/**
- * Get logger from Hono context.
- *
- * @param c - Hono context
- * @returns Logger (or base logger if not available)
- */
-export function getLogger(c: { get: (key: 'log') => Logger | undefined }): Logger {
-	return c.get('log') ?? pino();
-}
+export type { Logger, LoggerOptions };

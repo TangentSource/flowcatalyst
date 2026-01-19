@@ -16,6 +16,7 @@ export const anchorDomains = pgTable(
 		id: tsidColumn('id').primaryKey(),
 		domain: varchar('domain', { length: 255 }).notNull().unique(),
 		createdAt: timestampColumn('created_at').notNull().defaultNow(),
+		updatedAt: timestampColumn('updated_at').notNull().defaultNow(),
 	},
 	(table) => [index('anchor_domains_domain_idx').on(table.domain)],
 );

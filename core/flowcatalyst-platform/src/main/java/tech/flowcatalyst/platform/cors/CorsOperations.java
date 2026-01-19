@@ -10,6 +10,7 @@ import tech.flowcatalyst.platform.cors.operations.addorigin.AddCorsOriginCommand
 import tech.flowcatalyst.platform.cors.operations.addorigin.AddCorsOriginUseCase;
 import tech.flowcatalyst.platform.cors.operations.deleteorigin.DeleteCorsOriginCommand;
 import tech.flowcatalyst.platform.cors.operations.deleteorigin.DeleteCorsOriginUseCase;
+import tech.flowcatalyst.platform.cors.jooq.JooqCorsAllowedOriginRepository;
 
 import java.util.List;
 import java.util.Optional;
@@ -83,7 +84,7 @@ public class CorsOperations {
     // ========================================================================
 
     @Inject
-    CorsAllowedOriginRepository repository;
+    JooqCorsAllowedOriginRepository repository;
 
     @Inject
     CorsService corsService;

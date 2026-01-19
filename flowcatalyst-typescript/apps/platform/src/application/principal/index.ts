@@ -38,3 +38,24 @@ export {
 	createDeleteUserUseCase,
 	type DeleteUserUseCaseDeps,
 } from './delete-user/index.js';
+
+// Assign Roles
+export {
+	type AssignRolesCommand,
+	createAssignRolesUseCase,
+	type AssignRolesUseCaseDeps,
+} from './assign-roles/index.js';
+
+// Grant Client Access
+export {
+	type GrantClientAccessCommand,
+	createGrantClientAccessUseCase,
+	type GrantClientAccessUseCaseDeps,
+} from './grant-client-access/index.js';
+
+// Revoke Client Access
+export {
+	type RevokeClientAccessCommand,
+	createRevokeClientAccessUseCase,
+	type RevokeClientAccessUseCaseDeps,
+} from './revoke-client-access/index.js';

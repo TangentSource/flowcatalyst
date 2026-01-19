@@ -2,13 +2,12 @@
  * Response Utilities
  *
  * Utilities for mapping Result types to HTTP responses and
- * handling errors consistently.
+ * handling errors consistently with Fastify.
  */
 
-import type { Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import type { FastifyReply } from 'fastify';
 import { Result, type UseCaseError } from '@flowcatalyst/domain-core';
-import type { ErrorResponse, FlowCatalystEnv } from './types.js';
+import type { ErrorResponse } from './types.js';
 
 /**
  * HTTP status codes for use case errors.
@@ -61,17 +60,17 @@ export interface SendResultOptions<T, R> {
  * On success, sends the value (optionally transformed) with the success status.
  * On failure, maps the error to an appropriate HTTP status and error response.
  *
- * @param c - Hono context
+ * @param reply - Fastify reply
  * @param result - The Result to send
  * @param options - Response options
  * @returns HTTP response
  *
  * @example
  * ```typescript
- * app.post('/api/users', async (c) => {
- *     const ctx = c.get('executionContext');
+ * fastify.post('/api/users', async (request, reply) => {
+ *     const ctx = request.executionContext;
  *     const result = await createUserUseCase.execute(command, ctx);
- *     return sendResult(c, result, {
+ *     return sendResult(reply, result, {
  *         successStatus: 201,
  *         transform: (event) => ({ userId: event.userId }),
  *     });
@@ -79,20 +78,20 @@ export interface SendResultOptions<T, R> {
  * ```
  */
 export function sendResult<T, R = T>(
-	c: Context<FlowCatalystEnv>,
+	reply: FastifyReply,
 	result: Result<T>,
 	options: SendResultOptions<T, R> = {},
-): Response {
+): FastifyReply {
 	const { successStatus = 200, transform } = options;
 
 	if (Result.isSuccess(result)) {
 		const value = transform ? transform(result.value) : result.value;
-		return c.json(value as object, successStatus as ContentfulStatusCode);
+		return reply.status(successStatus).send(value);
 	}
 
 	const status = getErrorStatus(result.error);
 	const response = toErrorResponse(result.error);
-	return c.json(response, status as ContentfulStatusCode);
+	return reply.status(status).send(response);
 }
 
 /**
@@ -100,7 +99,7 @@ export function sendResult<T, R = T>(
  *
  * More flexible than sendResult - allows custom handling for success and failure.
  *
- * @param c - Hono context
+ * @param reply - Fastify reply
  * @param result - The Result to match
  * @param onSuccess - Handler for success case
  * @param onFailure - Optional handler for failure case (default: toErrorResponse)
@@ -108,77 +107,77 @@ export function sendResult<T, R = T>(
  *
  * @example
  * ```typescript
- * app.get('/api/users/:id', async (c) => {
- *     const result = await userOperations.findById(c.req.param('id'));
- *     return matchResult(c, result,
- *         (user) => c.json(toUserDto(user)),
+ * fastify.get('/api/users/:id', async (request, reply) => {
+ *     const result = await userOperations.findById(request.params.id);
+ *     return matchResult(reply, result,
+ *         (user) => reply.send(toUserDto(user)),
  *         (error) => {
  *             // Custom error handling
  *             if (error.code === 'USER_NOT_FOUND') {
- *                 return c.json({ error: 'User not found' }, 404);
+ *                 return reply.status(404).send({ error: 'User not found' });
  *             }
- *             return c.json(toErrorResponse(error), getErrorStatus(error));
+ *             return reply.status(getErrorStatus(error)).send(toErrorResponse(error));
  *         }
  *     );
  * });
  * ```
  */
 export function matchResult<T>(
-	c: Context<FlowCatalystEnv>,
+	reply: FastifyReply,
 	result: Result<T>,
-	onSuccess: (value: T) => Response,
-	onFailure?: (error: UseCaseError) => Response,
-): Response {
+	onSuccess: (value: T, reply: FastifyReply) => FastifyReply,
+	onFailure?: (error: UseCaseError, reply: FastifyReply) => FastifyReply,
+): FastifyReply {
 	if (Result.isSuccess(result)) {
-		return onSuccess(result.value);
+		return onSuccess(result.value, reply);
 	}
 
 	if (onFailure) {
-		return onFailure(result.error);
+		return onFailure(result.error, reply);
 	}
 
 	const status = getErrorStatus(result.error);
 	const response = toErrorResponse(result.error);
-	return c.json(response, status as ContentfulStatusCode);
+	return reply.status(status).send(response);
 }
 
 /**
  * Create a success JSON response.
  *
- * @param c - Hono context
+ * @param reply - Fastify reply
  * @param data - Response data
  * @param status - HTTP status (default: 200)
  * @returns HTTP response
  */
-export function jsonSuccess<T extends object>(c: Context, data: T, status: number = 200): Response {
-	return c.json(data, status as ContentfulStatusCode);
+export function jsonSuccess<T>(reply: FastifyReply, data: T, status: number = 200): FastifyReply {
+	return reply.status(status).send(data);
 }
 
 /**
  * Create a created (201) JSON response.
  *
- * @param c - Hono context
+ * @param reply - Fastify reply
  * @param data - Response data
  * @returns HTTP response
  */
-export function jsonCreated<T extends object>(c: Context, data: T): Response {
-	return c.json(data, 201);
+export function jsonCreated<T>(reply: FastifyReply, data: T): FastifyReply {
+	return reply.status(201).send(data);
 }
 
 /**
  * Create a no content (204) response.
  *
- * @param c - Hono context
+ * @param reply - Fastify reply
  * @returns HTTP response
  */
-export function noContent(c: Context): Response {
-	return c.body(null, 204);
+export function noContent(reply: FastifyReply): FastifyReply {
+	return reply.status(204).send();
 }
 
 /**
  * Create an error JSON response.
  *
- * @param c - Hono context
+ * @param reply - Fastify reply
  * @param status - HTTP status code
  * @param code - Error code
  * @param message - Error message
@@ -186,61 +185,61 @@ export function noContent(c: Context): Response {
  * @returns HTTP response
  */
 export function jsonError(
-	c: Context,
+	reply: FastifyReply,
 	status: number,
 	code: string,
 	message: string,
 	details?: Record<string, unknown>,
-): Response {
+): FastifyReply {
 	const response: ErrorResponse = {
 		code,
 		message,
 		...(details ? { details } : {}),
 	};
-	return c.json(response, status as ContentfulStatusCode);
+	return reply.status(status).send(response);
 }
 
 /**
  * Create a not found (404) error response.
  *
- * @param c - Hono context
+ * @param reply - Fastify reply
  * @param message - Error message (default: 'Not found')
  * @returns HTTP response
  */
-export function notFound(c: Context, message: string = 'Not found'): Response {
-	return jsonError(c, 404, 'NOT_FOUND', message);
+export function notFound(reply: FastifyReply, message: string = 'Not found'): FastifyReply {
+	return jsonError(reply, 404, 'NOT_FOUND', message);
 }
 
 /**
  * Create an unauthorized (401) error response.
  *
- * @param c - Hono context
+ * @param reply - Fastify reply
  * @param message - Error message (default: 'Authentication required')
  * @returns HTTP response
  */
-export function unauthorized(c: Context, message: string = 'Authentication required'): Response {
-	return jsonError(c, 401, 'UNAUTHORIZED', message);
+export function unauthorized(reply: FastifyReply, message: string = 'Authentication required'): FastifyReply {
+	return jsonError(reply, 401, 'UNAUTHORIZED', message);
 }
 
 /**
  * Create a forbidden (403) error response.
  *
- * @param c - Hono context
+ * @param reply - Fastify reply
  * @param message - Error message (default: 'Access denied')
  * @returns HTTP response
  */
-export function forbidden(c: Context, message: string = 'Access denied'): Response {
-	return jsonError(c, 403, 'FORBIDDEN', message);
+export function forbidden(reply: FastifyReply, message: string = 'Access denied'): FastifyReply {
+	return jsonError(reply, 403, 'FORBIDDEN', message);
 }
 
 /**
  * Create a bad request (400) error response.
  *
- * @param c - Hono context
+ * @param reply - Fastify reply
  * @param message - Error message
  * @param details - Optional validation details
  * @returns HTTP response
  */
-export function badRequest(c: Context, message: string, details?: Record<string, unknown>): Response {
-	return jsonError(c, 400, 'BAD_REQUEST', message, details);
+export function badRequest(reply: FastifyReply, message: string, details?: Record<string, unknown>): FastifyReply {
+	return jsonError(reply, 400, 'BAD_REQUEST', message, details);
 }

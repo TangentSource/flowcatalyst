@@ -1,58 +1,84 @@
 /**
  * OpenAPI Integration
  *
- * Utilities for OpenAPI documentation and Zod schema integration
- * with Hono applications.
+ * Utilities for OpenAPI documentation and TypeBox schema integration
+ * with Fastify applications.
+ *
+ * TypeBox is the native choice for Fastify because:
+ * - It generates JSON Schema directly (Fastify uses AJV for validation)
+ * - Enables Fastify's high-speed JIT compilation
+ * - No runtime conversion overhead (unlike Zod)
+ * - Full TypeScript inference with schemas
  */
 
-import { z } from 'zod';
+import { Type, type Static, type TSchema, type TObject, type TProperties } from '@sinclair/typebox';
+import { Value } from '@sinclair/typebox/value';
 
 /**
- * Common Zod schemas for FlowCatalyst APIs.
+ * Common TypeBox schemas for FlowCatalyst APIs.
  */
 export const CommonSchemas = {
 	/**
 	 * TSID - 13-character Crockford Base32 string.
 	 */
-	tsid: z.string().length(13).regex(/^[0-9A-HJKMNP-TV-Z]{13}$/i, 'Invalid TSID format'),
+	Tsid: Type.String({
+		minLength: 13,
+		maxLength: 13,
+		pattern: '^[0-9A-HJKMNP-TV-Z]{13}$',
+		description: 'TSID in Crockford Base32 format',
+	}),
 
 	/**
 	 * Typed ID - entity prefix + underscore + TSID (e.g., "user_0HZXEQ5Y8JY5Z").
 	 */
-	typedId: z.string().regex(/^[a-z]+_[0-9A-HJKMNP-TV-Z]{13}$/i, 'Invalid typed ID format'),
+	TypedId: Type.String({
+		pattern: '^[a-z]+_[0-9A-HJKMNP-TV-Z]{13}$',
+		description: 'Typed ID (prefix_TSID format)',
+	}),
 
 	/**
 	 * ISO 8601 datetime string.
 	 */
-	datetime: z.string().datetime(),
+	DateTime: Type.String({
+		format: 'date-time',
+		description: 'ISO 8601 datetime',
+	}),
 
 	/**
 	 * Email address.
 	 */
-	email: z.string().email(),
+	Email: Type.String({
+		format: 'email',
+		description: 'Email address',
+	}),
 
 	/**
 	 * Non-empty string.
 	 */
-	nonEmptyString: z.string().min(1),
+	NonEmptyString: Type.String({
+		minLength: 1,
+		description: 'Non-empty string',
+	}),
 
 	/**
-	 * Pagination parameters.
+	 * Pagination query parameters.
 	 */
-	pagination: z.object({
-		page: z.coerce.number().int().min(0).default(0),
-		pageSize: z.coerce.number().int().min(1).max(100).default(20),
+	PaginationQuery: Type.Object({
+		page: Type.Optional(Type.Number({ minimum: 0, default: 0 })),
+		pageSize: Type.Optional(Type.Number({ minimum: 1, maximum: 100, default: 20 })),
 	}),
 };
 
 /**
  * Standard error response schema.
  */
-export const ErrorResponseSchema = z.object({
-	message: z.string().describe('Human-readable error message'),
-	code: z.string().describe('Machine-readable error code'),
-	details: z.record(z.unknown()).optional().describe('Additional error details'),
+export const ErrorResponseSchema = Type.Object({
+	message: Type.String({ description: 'Human-readable error message' }),
+	code: Type.String({ description: 'Machine-readable error code' }),
+	details: Type.Optional(Type.Record(Type.String(), Type.Unknown(), { description: 'Additional error details' })),
 });
+
+export type ErrorResponseType = Static<typeof ErrorResponseSchema>;
 
 /**
  * Paginated response wrapper schema.
@@ -60,15 +86,15 @@ export const ErrorResponseSchema = z.object({
  * @param itemSchema - Schema for individual items
  * @returns Schema for paginated response
  */
-export function paginatedResponse<T extends z.ZodTypeAny>(itemSchema: T) {
-	return z.object({
-		items: z.array(itemSchema),
-		page: z.number().int().min(0),
-		pageSize: z.number().int().min(1),
-		totalItems: z.number().int().min(0),
-		totalPages: z.number().int().min(0),
-		hasNext: z.boolean(),
-		hasPrevious: z.boolean(),
+export function paginatedResponse<T extends TSchema>(itemSchema: T) {
+	return Type.Object({
+		items: Type.Array(itemSchema),
+		page: Type.Number({ minimum: 0 }),
+		pageSize: Type.Number({ minimum: 1 }),
+		totalItems: Type.Number({ minimum: 0 }),
+		totalPages: Type.Number({ minimum: 0 }),
+		hasNext: Type.Boolean(),
+		hasPrevious: Type.Boolean(),
 	});
 }
 
@@ -78,11 +104,11 @@ export function paginatedResponse<T extends z.ZodTypeAny>(itemSchema: T) {
  * @param fields - Entity-specific fields
  * @returns Schema with id, createdAt, updatedAt
  */
-export function entitySchema<T extends z.ZodRawShape>(fields: T) {
-	return z.object({
-		id: CommonSchemas.tsid.describe('Unique entity ID'),
-		createdAt: CommonSchemas.datetime.describe('When the entity was created'),
-		updatedAt: CommonSchemas.datetime.describe('When the entity was last updated'),
+export function entitySchema<T extends TProperties>(fields: T) {
+	return Type.Object({
+		id: Type.String({ description: 'Unique entity ID' }),
+		createdAt: Type.String({ format: 'date-time', description: 'When the entity was created' }),
+		updatedAt: Type.String({ format: 'date-time', description: 'When the entity was last updated' }),
 		...fields,
 	});
 }
@@ -92,7 +118,7 @@ export function entitySchema<T extends z.ZodRawShape>(fields: T) {
  */
 export const OpenAPIResponses = {
 	/** 200 OK */
-	ok: <T extends z.ZodTypeAny>(schema: T, description: string = 'Successful response') => ({
+	ok: <T extends TSchema>(schema: T, description: string = 'Successful response') => ({
 		200: {
 			description,
 			content: { 'application/json': { schema } },
@@ -100,7 +126,7 @@ export const OpenAPIResponses = {
 	}),
 
 	/** 201 Created */
-	created: <T extends z.ZodTypeAny>(schema: T, description: string = 'Resource created') => ({
+	created: <T extends TSchema>(schema: T, description: string = 'Resource created') => ({
 		201: {
 			description,
 			content: { 'application/json': { schema } },
@@ -183,46 +209,42 @@ export function combineResponses(
 }
 
 /**
- * Validate request body against a Zod schema.
+ * Validate data against a TypeBox schema.
+ * Note: Fastify validates automatically when schemas are provided in route config.
+ * This function is for manual validation outside of route handlers.
  *
- * @param body - Request body
- * @param schema - Zod schema to validate against
- * @returns Validated and typed body
- * @throws ZodError if validation fails
+ * @param data - Data to validate
+ * @param schema - TypeBox schema to validate against
+ * @returns Validated and typed data
+ * @throws Error if validation fails
  */
-export function validateBody<T extends z.ZodTypeAny>(body: unknown, schema: T): z.infer<T> {
-	return schema.parse(body);
-}
-
-/**
- * Validate query parameters against a Zod schema.
- *
- * @param query - Query parameters object
- * @param schema - Zod schema to validate against
- * @returns Validated and typed query parameters
- * @throws ZodError if validation fails
- */
-export function validateQuery<T extends z.ZodTypeAny>(
-	query: Record<string, string | string[] | undefined>,
-	schema: T,
-): z.infer<T> {
-	return schema.parse(query);
+export function validateBody<T extends TSchema>(data: unknown, schema: T): Static<T> {
+	if (!Value.Check(schema, data)) {
+		const errors = [...Value.Errors(schema, data)];
+		const message = errors.map((e) => `${e.path}: ${e.message}`).join(', ');
+		throw new Error(`Validation failed: ${message}`);
+	}
+	return data as Static<T>;
 }
 
 /**
  * Safe validation that returns a Result-like object instead of throwing.
  *
  * @param data - Data to validate
- * @param schema - Zod schema to validate against
- * @returns Object with success flag and either data or error
+ * @param schema - TypeBox schema to validate against
+ * @returns Object with success flag and either data or errors
  */
-export function safeValidate<T extends z.ZodTypeAny>(
+export function safeValidate<T extends TSchema>(
 	data: unknown,
 	schema: T,
-): { success: true; data: z.infer<T> } | { success: false; error: z.ZodError } {
-	const result = schema.safeParse(data);
-	if (result.success) {
-		return { success: true, data: result.data };
+): { success: true; data: Static<T> } | { success: false; error: string } {
+	if (Value.Check(schema, data)) {
+		return { success: true, data: data as Static<T> };
 	}
-	return { success: false, error: result.error };
+	const errors = [...Value.Errors(schema, data)];
+	const message = errors.map((e) => `${e.path}: ${e.message}`).join(', ');
+	return { success: false, error: message };
 }
+
+// Re-export TypeBox for convenience
+export { Type, Value, type Static, type TSchema, type TObject };

@@ -7,7 +7,7 @@ import tech.flowcatalyst.platform.common.Result;
 import tech.flowcatalyst.platform.common.UnitOfWork;
 import tech.flowcatalyst.platform.common.errors.UseCaseError;
 import tech.flowcatalyst.platform.cors.CorsAllowedOrigin;
-import tech.flowcatalyst.platform.cors.CorsAllowedOriginRepository;
+import tech.flowcatalyst.platform.cors.jooq.JooqCorsAllowedOriginRepository;
 import tech.flowcatalyst.platform.cors.events.CorsOriginAdded;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
 
@@ -20,7 +20,7 @@ import java.util.Map;
 public class AddCorsOriginUseCase {
 
     @Inject
-    CorsAllowedOriginRepository repository;
+    JooqCorsAllowedOriginRepository repository;
 
     @Inject
     UnitOfWork unitOfWork;

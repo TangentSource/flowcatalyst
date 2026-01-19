@@ -3,6 +3,7 @@ package tech.flowcatalyst.platform.cors;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
+import tech.flowcatalyst.platform.cors.jooq.JooqCorsAllowedOriginRepository;
 
 import java.time.Instant;
 import java.util.Set;
@@ -23,7 +24,7 @@ public class CorsService {
     private static final long CACHE_TTL_SECONDS = 300; // 5 minutes
 
     @Inject
-    CorsAllowedOriginRepository repository;
+    JooqCorsAllowedOriginRepository repository;
 
     // Simple non-blocking cache using AtomicReference
     private final AtomicReference<CacheEntry> cache = new AtomicReference<>();

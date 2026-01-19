@@ -4,10 +4,9 @@
  * REST endpoints for user management.
  */
 
-import { Hono } from 'hono';
-import { z } from 'zod';
+import type { FastifyInstance } from 'fastify';
+import { Type, type Static } from '@sinclair/typebox';
 import {
-	type FlowCatalystEnv,
 	sendResult,
 	jsonCreated,
 	jsonSuccess,
@@ -25,21 +24,53 @@ import type {
 	ActivateUserCommand,
 	DeactivateUserCommand,
 	DeleteUserCommand,
+	AssignRolesCommand,
+	GrantClientAccessCommand,
+	RevokeClientAccessCommand,
 } from '../../application/index.js';
-import type { UserCreated, UserUpdated, UserActivated, UserDeactivated, UserDeleted } from '../../domain/index.js';
-import type { PrincipalRepository } from '../../infrastructure/persistence/index.js';
+import type {
+	UserCreated,
+	UserUpdated,
+	UserActivated,
+	UserDeactivated,
+	UserDeleted,
+	RolesAssigned,
+	ClientAccessGranted,
+	ClientAccessRevoked,
+} from '../../domain/index.js';
+import type {
+	PrincipalRepository,
+	ClientAccessGrantRepository,
+	AnchorDomainRepository,
+	ClientAuthConfigRepository,
+} from '../../infrastructure/persistence/index.js';
+import { requirePermission } from '../../authorization/index.js';
+import { USER_PERMISSIONS, CLIENT_ACCESS_PERMISSIONS } from '../../authorization/permissions/platform-iam.js';
 
-// Request schemas
-const CreateUserSchema = z.object({
-	email: z.string().email(),
-	password: z.string().min(8).nullable(),
-	name: z.string().min(1),
-	clientId: z.string().length(13).nullable().optional(),
+// Request schemas using TypeBox
+const CreateUserSchema = Type.Object({
+	email: Type.String({ format: 'email' }),
+	password: Type.Union([Type.String({ minLength: 8 }), Type.Null()]),
+	name: Type.String({ minLength: 1 }),
+	clientId: Type.Optional(Type.Union([Type.String({ minLength: 13, maxLength: 13 }), Type.Null()])),
 });
 
-const UpdateUserSchema = z.object({
-	name: z.string().min(1),
+const UpdateUserSchema = Type.Object({
+	name: Type.String({ minLength: 1 }),
 });
+
+const AssignRolesSchema = Type.Object({
+	roles: Type.Array(Type.String()),
+});
+
+const GrantClientAccessSchema = Type.Object({
+	clientId: Type.String({ minLength: 17, maxLength: 17 }),
+});
+
+type CreateUserBody = Static<typeof CreateUserSchema>;
+type UpdateUserBody = Static<typeof UpdateUserSchema>;
+type AssignRolesBody = Static<typeof AssignRolesSchema>;
+type GrantClientAccessBody = Static<typeof GrantClientAccessSchema>;
 
 // Response schemas for user
 interface UserResponse {
@@ -63,43 +94,85 @@ interface UsersListResponse {
 	pageSize: number;
 }
 
+interface RoleAssignmentResponse {
+	roleName: string;
+	assignmentSource: string;
+	assignedAt: string;
+}
+
+interface UserRolesResponse {
+	userId: string;
+	roles: RoleAssignmentResponse[];
+}
+
+interface ClientAccessGrantResponse {
+	id: string;
+	clientId: string;
+	grantedBy: string;
+	grantedAt: string;
+}
+
+interface UserClientAccessResponse {
+	userId: string;
+	grants: ClientAccessGrantResponse[];
+}
+
+interface EmailDomainCheckResponse {
+	domain: string;
+	authProvider: string;
+	isAnchorDomain: boolean;
+	hasAuthConfig: boolean;
+	emailExists: boolean;
+	info: string | null;
+	warning: string | null;
+}
+
 /**
  * Dependencies for the users API.
  */
-export interface UsersApiDeps {
+export interface UsersRoutesDeps {
 	readonly principalRepository: PrincipalRepository;
+	readonly clientAccessGrantRepository: ClientAccessGrantRepository;
+	readonly anchorDomainRepository: AnchorDomainRepository;
+	readonly clientAuthConfigRepository: ClientAuthConfigRepository;
 	readonly createUserUseCase: UseCase<CreateUserCommand, UserCreated>;
 	readonly updateUserUseCase: UseCase<UpdateUserCommand, UserUpdated>;
 	readonly activateUserUseCase: UseCase<ActivateUserCommand, UserActivated>;
 	readonly deactivateUserUseCase: UseCase<DeactivateUserCommand, UserDeactivated>;
 	readonly deleteUserUseCase: UseCase<DeleteUserCommand, UserDeleted>;
+	readonly assignRolesUseCase: UseCase<AssignRolesCommand, RolesAssigned>;
+	readonly grantClientAccessUseCase: UseCase<GrantClientAccessCommand, ClientAccessGranted>;
+	readonly revokeClientAccessUseCase: UseCase<RevokeClientAccessCommand, ClientAccessRevoked>;
 }
 
 /**
- * Create the users admin API routes.
+ * Register user admin API routes.
  */
-export function createUsersApi(deps: UsersApiDeps): Hono<FlowCatalystEnv> {
+export async function registerUsersRoutes(fastify: FastifyInstance, deps: UsersRoutesDeps): Promise<void> {
 	const {
 		principalRepository,
+		clientAccessGrantRepository,
+		anchorDomainRepository,
+		clientAuthConfigRepository,
 		createUserUseCase,
 		updateUserUseCase,
 		activateUserUseCase,
 		deactivateUserUseCase,
 		deleteUserUseCase,
+		assignRolesUseCase,
+		grantClientAccessUseCase,
+		revokeClientAccessUseCase,
 	} = deps;
 
-	const app = new Hono<FlowCatalystEnv>();
-
 	// POST /api/admin/users - Create user
-	app.post('/', async (c) => {
-		const rawBody = await c.req.json();
-		const bodyResult = safeValidate(rawBody, CreateUserSchema);
+	fastify.post('/users', async (request, reply) => {
+		const bodyResult = safeValidate(request.body, CreateUserSchema);
 		if (!bodyResult.success) {
-			return badRequest(c, bodyResult.error.message);
+			return badRequest(reply, bodyResult.error);
 		}
 
-		const body = bodyResult.data;
-		const ctx = c.get('executionContext');
+		const body = bodyResult.data as CreateUserBody;
+		const ctx = request.executionContext;
 
 		const command: CreateUserCommand = {
 			email: body.email,
@@ -125,16 +198,17 @@ export function createUsersApi(deps: UsersApiDeps): Hono<FlowCatalystEnv> {
 				createdAt: event.time.toISOString(),
 				updatedAt: event.time.toISOString(),
 			};
-			return jsonCreated(c, response);
+			return jsonCreated(reply, response);
 		}
 
-		return sendResult(c, result);
+		return sendResult(reply, result);
 	});
 
 	// GET /api/admin/users - List users
-	app.get('/', async (c) => {
-		const page = parseInt(c.req.query('page') ?? '0', 10);
-		const pageSize = Math.min(parseInt(c.req.query('pageSize') ?? '20', 10), 100);
+	fastify.get('/users', async (request, reply) => {
+		const query = request.query as { page?: string; pageSize?: string };
+		const page = parseInt(query.page ?? '0', 10);
+		const pageSize = Math.min(parseInt(query.pageSize ?? '20', 10), 100);
 
 		const pagedResult = await principalRepository.findPaged(page, pageSize);
 
@@ -159,16 +233,16 @@ export function createUsersApi(deps: UsersApiDeps): Hono<FlowCatalystEnv> {
 			pageSize: pagedResult.pageSize,
 		};
 
-		return jsonSuccess(c, response);
+		return jsonSuccess(reply, response);
 	});
 
 	// GET /api/admin/users/:id - Get user by ID
-	app.get('/:id', async (c) => {
-		const id = c.req.param('id');
+	fastify.get('/users/:id', async (request, reply) => {
+		const { id } = request.params as { id: string };
 		const principal = await principalRepository.findById(id);
 
 		if (!principal || principal.type !== 'USER') {
-			return notFound(c, `User not found: ${id}`);
+			return notFound(reply, `User not found: ${id}`);
 		}
 
 		const response: UserResponse = {
@@ -185,20 +259,19 @@ export function createUsersApi(deps: UsersApiDeps): Hono<FlowCatalystEnv> {
 			updatedAt: principal.updatedAt.toISOString(),
 		};
 
-		return jsonSuccess(c, response);
+		return jsonSuccess(reply, response);
 	});
 
 	// PUT /api/admin/users/:id - Update user
-	app.put('/:id', async (c) => {
-		const id = c.req.param('id');
-		const rawBody = await c.req.json();
-		const bodyResult = safeValidate(rawBody, UpdateUserSchema);
+	fastify.put('/users/:id', async (request, reply) => {
+		const { id } = request.params as { id: string };
+		const bodyResult = safeValidate(request.body, UpdateUserSchema);
 		if (!bodyResult.success) {
-			return badRequest(c, bodyResult.error.message);
+			return badRequest(reply, bodyResult.error);
 		}
 
-		const body = bodyResult.data;
-		const ctx = c.get('executionContext');
+		const body = bodyResult.data as UpdateUserBody;
+		const ctx = request.executionContext;
 
 		const command: UpdateUserCommand = {
 			userId: id,
@@ -223,17 +296,17 @@ export function createUsersApi(deps: UsersApiDeps): Hono<FlowCatalystEnv> {
 					createdAt: principal.createdAt.toISOString(),
 					updatedAt: principal.updatedAt.toISOString(),
 				};
-				return jsonSuccess(c, response);
+				return jsonSuccess(reply, response);
 			}
 		}
 
-		return sendResult(c, result);
+		return sendResult(reply, result);
 	});
 
 	// POST /api/admin/users/:id/activate - Activate user
-	app.post('/:id/activate', async (c) => {
-		const id = c.req.param('id');
-		const ctx = c.get('executionContext');
+	fastify.post('/users/:id/activate', async (request, reply) => {
+		const { id } = request.params as { id: string };
+		const ctx = request.executionContext;
 
 		const command: ActivateUserCommand = {
 			userId: id,
@@ -257,17 +330,17 @@ export function createUsersApi(deps: UsersApiDeps): Hono<FlowCatalystEnv> {
 					createdAt: principal.createdAt.toISOString(),
 					updatedAt: principal.updatedAt.toISOString(),
 				};
-				return jsonSuccess(c, response);
+				return jsonSuccess(reply, response);
 			}
 		}
 
-		return sendResult(c, result);
+		return sendResult(reply, result);
 	});
 
 	// POST /api/admin/users/:id/deactivate - Deactivate user
-	app.post('/:id/deactivate', async (c) => {
-		const id = c.req.param('id');
-		const ctx = c.get('executionContext');
+	fastify.post('/users/:id/deactivate', async (request, reply) => {
+		const { id } = request.params as { id: string };
+		const ctx = request.executionContext;
 
 		const command: DeactivateUserCommand = {
 			userId: id,
@@ -291,17 +364,17 @@ export function createUsersApi(deps: UsersApiDeps): Hono<FlowCatalystEnv> {
 					createdAt: principal.createdAt.toISOString(),
 					updatedAt: principal.updatedAt.toISOString(),
 				};
-				return jsonSuccess(c, response);
+				return jsonSuccess(reply, response);
 			}
 		}
 
-		return sendResult(c, result);
+		return sendResult(reply, result);
 	});
 
 	// DELETE /api/admin/users/:id - Delete user
-	app.delete('/:id', async (c) => {
-		const id = c.req.param('id');
-		const ctx = c.get('executionContext');
+	fastify.delete('/users/:id', async (request, reply) => {
+		const { id } = request.params as { id: string };
+		const ctx = request.executionContext;
 
 		const command: DeleteUserCommand = {
 			userId: id,
@@ -310,11 +383,242 @@ export function createUsersApi(deps: UsersApiDeps): Hono<FlowCatalystEnv> {
 		const result = await deleteUserUseCase.execute(command, ctx);
 
 		if (Result.isSuccess(result)) {
-			return noContent(c);
+			return noContent(reply);
 		}
 
-		return sendResult(c, result);
+		return sendResult(reply, result);
 	});
 
-	return app;
+	// GET /api/admin/users/:id/roles - Get user roles
+	fastify.get(
+		'/users/:id/roles',
+		{
+			preHandler: requirePermission(USER_PERMISSIONS.READ),
+		},
+		async (request, reply) => {
+			const { id } = request.params as { id: string };
+			const principal = await principalRepository.findById(id);
+
+			if (!principal || principal.type !== 'USER') {
+				return notFound(reply, `User not found: ${id}`);
+			}
+
+			const response: UserRolesResponse = {
+				userId: principal.id,
+				roles: principal.roles.map((r) => ({
+					roleName: r.roleName,
+					assignmentSource: r.assignmentSource,
+					assignedAt: r.assignedAt.toISOString(),
+				})),
+			};
+
+			return jsonSuccess(reply, response);
+		},
+	);
+
+	// PUT /api/admin/users/:id/roles - Assign roles to user
+	fastify.put(
+		'/users/:id/roles',
+		{
+			preHandler: requirePermission(USER_PERMISSIONS.ASSIGN_ROLES),
+		},
+		async (request, reply) => {
+			const { id } = request.params as { id: string };
+			const bodyResult = safeValidate(request.body, AssignRolesSchema);
+			if (!bodyResult.success) {
+				return badRequest(reply, bodyResult.error);
+			}
+
+			const body = bodyResult.data as AssignRolesBody;
+			const ctx = request.executionContext;
+
+			const command: AssignRolesCommand = {
+				userId: id,
+				roles: body.roles,
+			};
+
+			const result = await assignRolesUseCase.execute(command, ctx);
+
+			if (Result.isSuccess(result)) {
+				const principal = await principalRepository.findById(id);
+				if (principal) {
+					const response: UserRolesResponse = {
+						userId: principal.id,
+						roles: principal.roles.map((r) => ({
+							roleName: r.roleName,
+							assignmentSource: r.assignmentSource,
+							assignedAt: r.assignedAt.toISOString(),
+						})),
+					};
+					return jsonSuccess(reply, response);
+				}
+			}
+
+			return sendResult(reply, result);
+		},
+	);
+
+	// GET /api/admin/users/:id/client-access - Get user client access grants
+	fastify.get(
+		'/users/:id/client-access',
+		{
+			preHandler: requirePermission(CLIENT_ACCESS_PERMISSIONS.READ),
+		},
+		async (request, reply) => {
+			const { id } = request.params as { id: string };
+			const principal = await principalRepository.findById(id);
+
+			if (!principal || principal.type !== 'USER') {
+				return notFound(reply, `User not found: ${id}`);
+			}
+
+			const grants = await clientAccessGrantRepository.findByPrincipal(id);
+
+			const response: UserClientAccessResponse = {
+				userId: principal.id,
+				grants: grants.map((g) => ({
+					id: g.id,
+					clientId: g.clientId,
+					grantedBy: g.grantedBy,
+					grantedAt: g.grantedAt.toISOString(),
+				})),
+			};
+
+			return jsonSuccess(reply, response);
+		},
+	);
+
+	// POST /api/admin/users/:id/client-access - Grant client access to user
+	fastify.post(
+		'/users/:id/client-access',
+		{
+			preHandler: requirePermission(CLIENT_ACCESS_PERMISSIONS.GRANT),
+		},
+		async (request, reply) => {
+			const { id } = request.params as { id: string };
+			const bodyResult = safeValidate(request.body, GrantClientAccessSchema);
+			if (!bodyResult.success) {
+				return badRequest(reply, bodyResult.error);
+			}
+
+			const body = bodyResult.data as GrantClientAccessBody;
+			const ctx = request.executionContext;
+
+			const command: GrantClientAccessCommand = {
+				userId: id,
+				clientId: body.clientId,
+			};
+
+			const result = await grantClientAccessUseCase.execute(command, ctx);
+
+			if (Result.isSuccess(result)) {
+				const grant = await clientAccessGrantRepository.findByPrincipalAndClient(id, body.clientId);
+				if (grant) {
+					const response: ClientAccessGrantResponse = {
+						id: grant.id,
+						clientId: grant.clientId,
+						grantedBy: grant.grantedBy,
+						grantedAt: grant.grantedAt.toISOString(),
+					};
+					return jsonCreated(reply, response);
+				}
+			}
+
+			return sendResult(reply, result);
+		},
+	);
+
+	// DELETE /api/admin/users/:id/client-access/:clientId - Revoke client access from user
+	fastify.delete(
+		'/users/:id/client-access/:clientId',
+		{
+			preHandler: requirePermission(CLIENT_ACCESS_PERMISSIONS.REVOKE),
+		},
+		async (request, reply) => {
+			const { id, clientId } = request.params as { id: string; clientId: string };
+			const ctx = request.executionContext;
+
+			const command: RevokeClientAccessCommand = {
+				userId: id,
+				clientId,
+			};
+
+			const result = await revokeClientAccessUseCase.execute(command, ctx);
+
+			if (Result.isSuccess(result)) {
+				return noContent(reply);
+			}
+
+			return sendResult(reply, result);
+		},
+	);
+
+	// GET /api/admin/users/check-email-domain - Check email domain configuration
+	fastify.get(
+		'/users/check-email-domain',
+		{
+			preHandler: requirePermission(USER_PERMISSIONS.READ),
+		},
+		async (request, reply) => {
+			const query = request.query as { email?: string };
+			const email = query.email;
+
+			if (!email) {
+				return badRequest(reply, 'Email query parameter is required');
+			}
+
+			// Validate email format and extract domain
+			const atIndex = email.indexOf('@');
+			if (atIndex === -1 || atIndex === 0 || atIndex === email.length - 1) {
+				return badRequest(reply, 'Invalid email format');
+			}
+			const domain = email.substring(atIndex + 1).toLowerCase();
+			if (!domain || domain.indexOf('.') === -1) {
+				return badRequest(reply, 'Invalid email domain');
+			}
+
+			// Check if email already exists
+			const emailExists = await principalRepository.existsByEmail(email);
+
+			// Check if this is an anchor domain
+			const isAnchorDomain = await anchorDomainRepository.existsByDomain(domain);
+
+			// Check for auth configuration
+			const authConfig = await clientAuthConfigRepository.findByEmailDomain(domain);
+			const hasAuthConfig = authConfig !== undefined;
+			const authProvider = authConfig?.authProvider ?? 'INTERNAL';
+
+			// Build info and warning messages
+			let info: string | null = null;
+			let warning: string | null = null;
+
+			if (isAnchorDomain) {
+				info = 'This email domain is configured as an anchor domain. Users will have platform-wide access.';
+			} else if (hasAuthConfig && authConfig) {
+				if (authConfig.authProvider === 'OIDC') {
+					info = `This domain uses external OIDC authentication.`;
+				} else {
+					info = 'This domain has a configured authentication method.';
+				}
+			} else {
+				info = 'This domain will use internal authentication. Users will be created with a password.';
+			}
+
+			if (emailExists) {
+				warning = 'A user with this email already exists.';
+			}
+
+			const response: EmailDomainCheckResponse = {
+				domain,
+				authProvider,
+				isAnchorDomain,
+				hasAuthConfig,
+				emailExists,
+				info,
+				warning,
+			};
+
+			return jsonSuccess(reply, response);
+		},
+	);
 }

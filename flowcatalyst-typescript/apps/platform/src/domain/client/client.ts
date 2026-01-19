@@ -64,7 +64,7 @@ export function createClient(params: {
 	identifier: string;
 }): NewClient {
 	return {
-		id: generate(),
+		id: generate('CLIENT'),
 		name: params.name,
 		identifier: params.identifier.toLowerCase(),
 		status: 'ACTIVE',

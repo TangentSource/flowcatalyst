@@ -4,26 +4,54 @@
  * REST API endpoints for the platform service.
  */
 
-import { Hono } from 'hono';
-import type { FlowCatalystEnv } from '@flowcatalyst/http';
+import type { FastifyInstance } from 'fastify';
 
-import { createAdminApi, type AdminApiDeps } from './admin/index.js';
+import { registerUsersRoutes, type UsersRoutesDeps } from './admin/users.js';
+import { registerClientsRoutes, type ClientsRoutesDeps } from './admin/clients.js';
+import { registerAnchorDomainsRoutes, type AnchorDomainsRoutesDeps } from './admin/anchor-domains.js';
+import { registerApplicationsRoutes, type ApplicationsRoutesDeps } from './admin/applications.js';
+import { registerRolesRoutes, type RolesRoutesDeps } from './admin/roles.js';
+import { registerAuthConfigsRoutes, type AuthConfigsRoutesDeps } from './admin/auth-configs.js';
+import { registerOAuthClientsRoutes, type OAuthClientsRoutesDeps } from './admin/oauth-clients.js';
+import { registerAuditLogsRoutes, type AuditLogsRoutesDeps } from './admin/audit-logs.js';
 
 /**
- * Dependencies for all APIs.
+ * Dependencies for admin routes.
  */
-export interface ApiDeps extends AdminApiDeps {}
+export interface AdminRoutesDeps
+	extends UsersRoutesDeps,
+		ClientsRoutesDeps,
+		AnchorDomainsRoutesDeps,
+		ApplicationsRoutesDeps,
+		RolesRoutesDeps,
+		AuthConfigsRoutesDeps,
+		OAuthClientsRoutesDeps,
+		AuditLogsRoutesDeps {}
 
 /**
- * Create all API routes.
+ * Register all admin API routes.
  */
-export function createApi(deps: ApiDeps): Hono<FlowCatalystEnv> {
-	const app = new Hono<FlowCatalystEnv>();
-
-	// Mount admin API
-	app.route('/admin', createAdminApi(deps));
-
-	return app;
+export async function registerAdminRoutes(fastify: FastifyInstance, deps: AdminRoutesDeps): Promise<void> {
+	await fastify.register(
+		async (adminRouter) => {
+			await registerUsersRoutes(adminRouter, deps);
+			await registerClientsRoutes(adminRouter, deps);
+			await registerAnchorDomainsRoutes(adminRouter, deps);
+			await registerApplicationsRoutes(adminRouter, deps);
+			await registerRolesRoutes(adminRouter, deps);
+			await registerAuthConfigsRoutes(adminRouter, deps);
+			await registerOAuthClientsRoutes(adminRouter, deps);
+			await registerAuditLogsRoutes(adminRouter, deps);
+		},
+		{ prefix: '/api/admin' },
+	);
 }
 
-export { type AdminApiDeps } from './admin/index.js';
+export { type UsersRoutesDeps } from './admin/users.js';
+export { type ClientsRoutesDeps } from './admin/clients.js';
+export { type AnchorDomainsRoutesDeps } from './admin/anchor-domains.js';
+export { type ApplicationsRoutesDeps } from './admin/applications.js';
+export { type RolesRoutesDeps } from './admin/roles.js';
+export { type AuthConfigsRoutesDeps } from './admin/auth-configs.js';
+export { type OAuthClientsRoutesDeps } from './admin/oauth-clients.js';
+export { type AuditLogsRoutesDeps } from './admin/audit-logs.js';

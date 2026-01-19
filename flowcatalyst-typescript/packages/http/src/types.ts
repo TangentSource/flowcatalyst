@@ -1,11 +1,11 @@
 /**
  * HTTP Layer Types
  *
- * Type definitions for the HTTP layer including Hono environment,
+ * Type definitions for the HTTP layer including Fastify request decorators,
  * context variables, and common interfaces.
  */
 
-import type { Context } from 'hono';
+import type { FastifyRequest, FastifyReply } from 'fastify';
 import type { PrincipalInfo, ExecutionContext } from '@flowcatalyst/domain-core';
 import type { Logger } from 'pino';
 
@@ -34,44 +34,9 @@ export interface AuditData {
 }
 
 /**
- * Hono environment type for FlowCatalyst applications.
- *
- * @example
- * ```typescript
- * const app = new Hono<FlowCatalystEnv>();
- *
- * app.get('/api/users', (c) => {
- *     const tracing = c.get('tracing');
- *     const audit = c.get('audit');
- *     const log = c.get('log');
- *
- *     log.info({ userId: audit.principalId }, 'Fetching users');
- *     return c.json({ users: [] });
- * });
- * ```
+ * Configuration for the tracing plugin.
  */
-export interface FlowCatalystEnv {
-	Variables: {
-		/** Tracing context for distributed tracing */
-		tracing: TracingData;
-		/** Audit context for authentication/authorization */
-		audit: AuditData;
-		/** Request-scoped logger with tracing context */
-		log: Logger;
-		/** Execution context for use case calls */
-		executionContext: ExecutionContext;
-	};
-}
-
-/**
- * Type alias for Hono Context with FlowCatalyst environment.
- */
-export type FlowCatalystContext = Context<FlowCatalystEnv>;
-
-/**
- * Configuration for the tracing middleware.
- */
-export interface TracingMiddlewareConfig {
+export interface TracingPluginOptions {
 	/** Header name for correlation ID (default: X-Correlation-ID) */
 	readonly correlationIdHeader?: string;
 	/** Alternative header name for correlation ID (default: X-Request-ID) */
@@ -83,9 +48,9 @@ export interface TracingMiddlewareConfig {
 }
 
 /**
- * Configuration for the audit middleware.
+ * Configuration for the audit plugin.
  */
-export interface AuditMiddlewareConfig {
+export interface AuditPluginOptions {
 	/** Cookie name for session token (default: session) */
 	readonly sessionCookieName?: string;
 	/** Paths to skip authentication (e.g., /health, /metrics) */
@@ -107,3 +72,19 @@ export interface ErrorResponse {
 	/** Additional error details */
 	readonly details?: Record<string, unknown>;
 }
+
+/**
+ * Fastify request augmentation for FlowCatalyst applications.
+ */
+declare module 'fastify' {
+	interface FastifyRequest {
+		/** Tracing context for distributed tracing */
+		tracing: TracingData;
+		/** Audit context for authentication/authorization */
+		audit: AuditData;
+		/** Execution context for use case calls */
+		executionContext: ExecutionContext;
+	}
+}
+
+export type { FastifyRequest, FastifyReply, Logger };

@@ -1,22 +1,18 @@
 /**
  * Error Handler
  *
- * Global error handler for Hono applications.
+ * Global error handler plugin for Fastify applications.
  * Catches exceptions and maps them to appropriate HTTP responses.
  */
 
-import type { ErrorHandler } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
-import { HTTPException } from 'hono/http-exception';
-import type { Logger } from 'pino';
-import type { FlowCatalystEnv, ErrorResponse } from './types.js';
+import type { FastifyPluginAsync, FastifyError } from 'fastify';
+import fp from 'fastify-plugin';
+import type { ErrorResponse } from './types.js';
 
 /**
  * Configuration for the error handler.
  */
 export interface ErrorHandlerConfig {
-	/** Logger for error logging */
-	readonly logger?: Logger;
 	/** Whether to include stack traces in responses (default: false) */
 	readonly includeStack?: boolean;
 	/** Custom error mappers */
@@ -34,26 +30,24 @@ export interface ErrorMapper {
 }
 
 /**
- * Create a global error handler for Hono.
+ * Create an error handler plugin for Fastify.
  *
  * Handles:
- * - HTTPException: Uses status and message from exception
- * - Custom errors: Uses registered mappers
- * - Unknown errors: Returns 500 Internal Server Error
+ * - Fastify errors (statusCode property)
+ * - Custom errors (via registered mappers)
+ * - Unknown errors (returns 500 Internal Server Error)
  *
  * @param config - Error handler configuration
- * @returns Hono error handler
+ * @returns Fastify plugin
  *
  * @example
  * ```typescript
- * import { Hono } from 'hono';
- * import { createErrorHandler, createLogger } from '@flowcatalyst/http';
+ * import Fastify from 'fastify';
+ * import { errorHandlerPlugin } from '@flowcatalyst/http';
  *
- * const logger = createLogger({ serviceName: 'api' });
- * const app = new Hono<FlowCatalystEnv>();
+ * const fastify = Fastify({ logger: true });
  *
- * app.onError(createErrorHandler({
- *     logger,
+ * await fastify.register(errorHandlerPlugin, {
  *     mappers: [
  *         {
  *             canHandle: (e) => e.name === 'ValidationError',
@@ -63,40 +57,26 @@ export interface ErrorMapper {
  *             }),
  *         },
  *     ],
- * }));
+ * });
  * ```
  */
-export function createErrorHandler(config: ErrorHandlerConfig = {}): ErrorHandler<FlowCatalystEnv> {
-	const { logger, includeStack = false, mappers = [] } = config;
+const errorHandlerPluginAsync: FastifyPluginAsync<ErrorHandlerConfig> = async (fastify, opts) => {
+	const { includeStack = false, mappers = [] } = opts;
 
-	return (error, c) => {
-		// Get request logger if available, fall back to base logger
-		const log = c.get('log') ?? logger;
-		const tracing = c.get('tracing');
+	fastify.setErrorHandler((error: FastifyError, request, reply) => {
+		const log = request.log;
+		const tracing = request.tracing;
 
-		// Handle HTTPException (from Hono)
-		if (error instanceof HTTPException) {
-			const status = error.status;
-			const message = error.message || 'An error occurred';
+		// Get status code from error if available
+		const statusCode = error.statusCode ?? 500;
 
-			if (status >= 500 && log) {
-				log.error(
-					{
-						error: error.name,
-						message: error.message,
-						status,
-						...(tracing ? { correlationId: tracing.correlationId } : {}),
-					},
-					'HTTP exception',
-				);
-			}
-
+		// Handle Fastify errors (with statusCode < 500)
+		if (statusCode < 500) {
 			const body: ErrorResponse = {
-				code: `HTTP_${status}`,
-				message,
+				code: `HTTP_${statusCode}`,
+				message: error.message || 'An error occurred',
 			};
-
-			return c.json(body, status as ContentfulStatusCode);
+			return reply.status(statusCode).send(body);
 		}
 
 		// Try custom mappers
@@ -104,7 +84,7 @@ export function createErrorHandler(config: ErrorHandlerConfig = {}): ErrorHandle
 			if (mapper.canHandle(error)) {
 				const { status, body } = mapper.toResponse(error);
 
-				if (status >= 500 && log) {
+				if (status >= 500) {
 					log.error(
 						{
 							error: error.name,
@@ -116,22 +96,20 @@ export function createErrorHandler(config: ErrorHandlerConfig = {}): ErrorHandle
 					);
 				}
 
-				return c.json(body, status as ContentfulStatusCode);
+				return reply.status(status).send(body);
 			}
 		}
 
 		// Log unexpected errors
-		if (log) {
-			log.error(
-				{
-					error: error.name,
-					message: error.message,
-					stack: error.stack,
-					...(tracing ? { correlationId: tracing.correlationId } : {}),
-				},
-				'Unhandled error',
-			);
-		}
+		log.error(
+			{
+				error: error.name,
+				message: error.message,
+				stack: error.stack,
+				...(tracing ? { correlationId: tracing.correlationId } : {}),
+			},
+			'Unhandled error',
+		);
 
 		// Return generic error response
 		const body: ErrorResponse = {
@@ -140,9 +118,14 @@ export function createErrorHandler(config: ErrorHandlerConfig = {}): ErrorHandle
 			...(includeStack && error.stack ? { details: { stack: error.stack } } : {}),
 		};
 
-		return c.json(body, 500 as ContentfulStatusCode);
-	};
-}
+		return reply.status(500).send(body);
+	});
+};
+
+export const errorHandlerPlugin = fp(errorHandlerPluginAsync, {
+	name: '@flowcatalyst/error-handler',
+	fastify: '5.x',
+});
 
 /**
  * Create common error mappers.
@@ -151,26 +134,17 @@ export function createErrorHandler(config: ErrorHandlerConfig = {}): ErrorHandle
  */
 export function createCommonErrorMappers(): ErrorMapper[] {
 	return [
-		// Zod validation errors
+		// TypeBox validation errors (from Fastify's AJV integration)
 		{
-			canHandle: (e) => e.name === 'ZodError',
+			canHandle: (e) => e.name === 'FST_ERR_VALIDATION' || (e as FastifyError).code === 'FST_ERR_VALIDATION',
 			toResponse: (e) => {
-				const zodError = e as { issues?: Array<{ path: string[]; message: string }> };
-				const details = zodError.issues?.reduce(
-					(acc, issue) => {
-						const path = issue.path.join('.');
-						acc[path] = issue.message;
-						return acc;
-					},
-					{} as Record<string, unknown>,
-				);
-
+				const fastifyError = e as FastifyError & { validation?: unknown[] };
 				return {
 					status: 400,
 					body: {
 						code: 'VALIDATION_ERROR',
 						message: 'Request validation failed',
-						...(details && Object.keys(details).length > 0 ? { details } : {}),
+						...(fastifyError.validation ? { details: { errors: fastifyError.validation } } : {}),
 					},
 				};
 			},
@@ -190,14 +164,12 @@ export function createCommonErrorMappers(): ErrorMapper[] {
 }
 
 /**
- * Create the standard error handler with common mappers.
+ * Create the standard error handler plugin with common mappers.
  *
- * @param logger - Logger instance
- * @returns Hono error handler
+ * @returns Error handler plugin options
  */
-export function createStandardErrorHandler(logger?: Logger): ErrorHandler<FlowCatalystEnv> {
-	return createErrorHandler({
-		...(logger ? { logger } : {}),
+export function createStandardErrorHandlerOptions(): ErrorHandlerConfig {
+	return {
 		mappers: createCommonErrorMappers(),
-	});
+	};
 }

@@ -23,7 +23,7 @@ import tech.flowcatalyst.platform.authentication.oauth.OAuthClient;
 import tech.flowcatalyst.platform.authentication.oauth.OAuthClient.ClientType;
 import tech.flowcatalyst.platform.authentication.oauth.OAuthClientRepository;
 import tech.flowcatalyst.platform.cors.CorsAllowedOrigin;
-import tech.flowcatalyst.platform.cors.CorsAllowedOriginRepository;
+import tech.flowcatalyst.platform.cors.jooq.JooqCorsAllowedOriginRepository;
 import tech.flowcatalyst.platform.security.secrets.SecretService;
 import tech.flowcatalyst.platform.shared.EntityType;
 import tech.flowcatalyst.platform.shared.TsidGenerator;
@@ -65,7 +65,7 @@ public class OAuthClientAdminResource {
     ApplicationRepository applicationRepo;
 
     @Inject
-    CorsAllowedOriginRepository corsOriginRepo;
+    JooqCorsAllowedOriginRepository corsOriginRepo;
 
     @Inject
     SecretService secretService;

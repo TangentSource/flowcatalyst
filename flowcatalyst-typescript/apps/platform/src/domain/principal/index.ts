@@ -17,6 +17,7 @@ export {
 	getRoleNames,
 	hasRole,
 	updatePrincipal,
+	assignRoles,
 } from './principal.js';
 
 export {
@@ -30,6 +31,12 @@ export {
 	createRoleAssignment,
 } from './role-assignment.js';
 
+export {
+	type ClientAccessGrant,
+	type NewClientAccessGrant,
+	createClientAccessGrant,
+} from './client-access-grant.js';
+
 // Events
 export {
 	UserCreated,
@@ -37,9 +44,15 @@ export {
 	UserActivated,
 	UserDeactivated,
 	UserDeleted,
+	RolesAssigned,
+	ClientAccessGranted,
+	ClientAccessRevoked,
 	type UserCreatedData,
 	type UserUpdatedData,
 	type UserActivatedData,
 	type UserDeactivatedData,
 	type UserDeletedData,
+	type RolesAssignedData,
+	type ClientAccessGrantedData,
+	type ClientAccessRevokedData,
 } from './events.js';

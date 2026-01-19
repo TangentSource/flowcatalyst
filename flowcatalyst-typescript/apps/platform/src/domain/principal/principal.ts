@@ -86,7 +86,7 @@ export function createUserPrincipal(params: {
 	userIdentity: UserIdentity;
 }): NewPrincipal {
 	return {
-		id: generate(),
+		id: generate('PRINCIPAL'),
 		type: 'USER',
 		scope: params.scope,
 		clientId: params.clientId,
@@ -122,6 +122,17 @@ export function updatePrincipal(
 	return {
 		...principal,
 		...updates,
+		updatedAt: new Date(),
+	};
+}
+
+/**
+ * Assign roles to a principal, replacing existing roles.
+ */
+export function assignRoles(principal: Principal, roleAssignments: readonly RoleAssignment[]): Principal {
+	return {
+		...principal,
+		roles: roleAssignments,
 		updatedAt: new Date(),
 	};
 }

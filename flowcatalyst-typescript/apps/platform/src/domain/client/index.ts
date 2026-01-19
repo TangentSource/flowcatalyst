@@ -13,3 +13,15 @@ export {
 	addClientNote,
 	changeClientStatus,
 } from './client.js';
+export {
+	type ClientCreatedData,
+	ClientCreated,
+	type ClientUpdatedData,
+	ClientUpdated,
+	type ClientStatusChangedData,
+	ClientStatusChanged,
+	type ClientDeletedData,
+	ClientDeleted,
+	type ClientNoteAddedData,
+	ClientNoteAdded,
+} from './events.js';

@@ -1,85 +1,86 @@
 /**
  * @flowcatalyst/http
  *
- * HTTP layer utilities for FlowCatalyst platform using Hono:
- * - Middleware for tracing, authentication, and logging
+ * HTTP layer utilities for FlowCatalyst platform using Fastify:
+ * - Plugins for tracing, authentication, and execution context
  * - Result to HTTP response mapping
  * - OpenAPI/Zod schema utilities
- * - Structured logging with Pino
+ * - Structured logging with Pino (Fastify's native logger)
  *
  * @example
  * ```typescript
- * import { Hono } from 'hono';
+ * import Fastify from 'fastify';
+ * import cookie from '@fastify/cookie';
+ * import cors from '@fastify/cors';
  * import {
- *     FlowCatalystEnv,
- *     tracingMiddleware,
- *     auditMiddleware,
- *     loggingMiddleware,
- *     executionContextMiddleware,
- *     createLogger,
- *     createStandardErrorHandler,
+ *     tracingPlugin,
+ *     auditPlugin,
+ *     executionContextPlugin,
+ *     errorHandlerPlugin,
+ *     createStandardErrorHandlerOptions,
+ *     createFastifyLoggerOptions,
  *     sendResult,
  * } from '@flowcatalyst/http';
  *
- * // Create app with FlowCatalyst environment
- * const app = new Hono<FlowCatalystEnv>();
+ * // Create Fastify app with logging
+ * const fastify = Fastify({
+ *     logger: createFastifyLoggerOptions({ serviceName: 'platform' }),
+ * });
  *
- * // Create logger
- * const logger = createLogger({ serviceName: 'control-plane' });
- *
- * // Apply middleware
- * app.use('*', tracingMiddleware());
- * app.use('*', auditMiddleware({
+ * // Register plugins
+ * await fastify.register(cookie);
+ * await fastify.register(cors, { origin: true, credentials: true });
+ * await fastify.register(tracingPlugin);
+ * await fastify.register(auditPlugin, {
  *     validateToken: async (token) => validateJwt(token),
- * }));
- * app.use('*', loggingMiddleware(logger));
- * app.use('*', executionContextMiddleware());
- *
- * // Error handler
- * app.onError(createStandardErrorHandler(logger));
+ * });
+ * await fastify.register(executionContextPlugin);
+ * await fastify.register(errorHandlerPlugin, createStandardErrorHandlerOptions());
  *
  * // Route with use case
- * app.post('/api/users', async (c) => {
- *     const ctx = c.get('executionContext');
- *     const body = await c.req.json();
+ * fastify.post('/api/users', async (request, reply) => {
+ *     const ctx = request.executionContext;
+ *     const body = request.body;
  *     const result = await createUserUseCase.execute(body, ctx);
- *     return sendResult(c, result, { successStatus: 201 });
+ *     return sendResult(reply, result, { successStatus: 201 });
  * });
+ *
+ * await fastify.listen({ port: 3000, host: '0.0.0.0' });
  * ```
  */
 
 // Types
 export {
-	type FlowCatalystEnv,
-	type FlowCatalystContext,
 	type TracingData,
 	type AuditData,
-	type TracingMiddlewareConfig,
-	type AuditMiddlewareConfig,
+	type TracingPluginOptions,
+	type AuditPluginOptions,
 	type ErrorResponse,
+	type FastifyRequest,
+	type FastifyReply,
+	type Logger,
 } from './types.js';
 
-// Middleware - Tracing
-export { tracingMiddleware, requireTracing, getTracingHeaders } from './middleware/tracing.js';
-
-// Middleware - Audit
+// Plugins
 export {
-	auditMiddleware,
+	tracingPlugin,
+	requireTracing,
+	getTracingHeaders,
+	auditPlugin,
 	requireAuth,
 	getPrincipalId,
 	isAuthenticated,
-	requireRole,
-} from './middleware/audit.js';
-
-// Middleware - Execution Context
-export { executionContextMiddleware, requireExecutionContext } from './middleware/execution-context.js';
+	requireAuthHook,
+	requireRoleHook,
+	executionContextPlugin,
+	requireExecutionContext,
+} from './plugins/index.js';
 
 // Logging
 export {
 	createLogger,
 	createRequestLogger,
-	loggingMiddleware,
-	getLogger,
+	createFastifyLoggerOptions,
 	type LoggingConfig,
 } from './logging.js';
 
@@ -102,26 +103,27 @@ export {
 
 // Error handler
 export {
-	createErrorHandler,
+	errorHandlerPlugin,
 	createCommonErrorMappers,
-	createStandardErrorHandler,
+	createStandardErrorHandlerOptions,
 	type ErrorHandlerConfig,
 	type ErrorMapper,
 } from './error-handler.js';
 
-// OpenAPI utilities
+// OpenAPI utilities (TypeBox for native Fastify JSON Schema support)
 export {
 	CommonSchemas,
 	ErrorResponseSchema,
+	type ErrorResponseType,
 	paginatedResponse,
 	entitySchema,
 	OpenAPIResponses,
 	combineResponses,
 	validateBody,
-	validateQuery,
 	safeValidate,
+	Type,
+	Value,
+	type Static,
+	type TSchema,
+	type TObject,
 } from './openapi.js';
-
-// Re-export commonly used types
-export { z } from 'zod';
-export { HTTPException } from 'hono/http-exception';

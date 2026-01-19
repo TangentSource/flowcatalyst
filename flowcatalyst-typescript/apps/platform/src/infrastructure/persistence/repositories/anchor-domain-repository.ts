@@ -97,6 +97,7 @@ export function createAnchorDomainRepository(defaultDb: AnyDb): AnchorDomainRepo
 				id: entity.id,
 				domain: entity.domain,
 				createdAt: entity.createdAt ?? now,
+				updatedAt: entity.updatedAt ?? now,
 			};
 
 			await db(tx).insert(anchorDomains).values(record);
@@ -105,10 +106,12 @@ export function createAnchorDomainRepository(defaultDb: AnyDb): AnchorDomainRepo
 		},
 
 		async update(entity: AnchorDomain, tx?: TransactionContext): Promise<AnchorDomain> {
+			const now = new Date();
 			await db(tx)
 				.update(anchorDomains)
 				.set({
 					domain: entity.domain,
+					updatedAt: now,
 				})
 				.where(eq(anchorDomains.id, entity.id));
 
@@ -144,5 +147,6 @@ function recordToAnchorDomain(record: AnchorDomainRecord): AnchorDomain {
 		id: record.id,
 		domain: record.domain,
 		createdAt: record.createdAt,
+		updatedAt: record.updatedAt,
 	};
 }

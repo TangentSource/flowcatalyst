@@ -8,7 +8,7 @@ import tech.flowcatalyst.platform.common.Result;
 import tech.flowcatalyst.platform.common.UnitOfWork;
 import tech.flowcatalyst.platform.common.errors.UseCaseError;
 import tech.flowcatalyst.platform.cors.CorsAllowedOrigin;
-import tech.flowcatalyst.platform.cors.CorsAllowedOriginRepository;
+import tech.flowcatalyst.platform.cors.jooq.JooqCorsAllowedOriginRepository;
 import tech.flowcatalyst.platform.cors.events.CorsOriginDeleted;
 
 import java.util.List;
@@ -21,7 +21,7 @@ import java.util.Map;
 public class DeleteCorsOriginUseCase {
 
     @Inject
-    CorsAllowedOriginRepository repository;
+    JooqCorsAllowedOriginRepository repository;
 
     @Inject
     OAuthClientRepository oauthClientRepository;

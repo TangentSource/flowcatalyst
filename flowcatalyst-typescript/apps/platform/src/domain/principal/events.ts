@@ -163,3 +163,94 @@ export class UserDeleted extends BaseDomainEvent<UserDeletedData> {
 		);
 	}
 }
+
+// -----------------------------------------------------------------------------
+// RolesAssigned
+// -----------------------------------------------------------------------------
+
+export interface RolesAssignedData {
+	readonly userId: string;
+	readonly email: string;
+	readonly roles: readonly string[];
+	readonly previousRoles: readonly string[];
+	readonly [key: string]: unknown;
+}
+
+export class RolesAssigned extends BaseDomainEvent<RolesAssignedData> {
+	static readonly EVENT_TYPE = DomainEvent.eventType(APP, DOMAIN, 'user', 'roles-assigned');
+	static readonly SPEC_VERSION = '1.0';
+
+	constructor(ctx: ExecutionContext, data: RolesAssignedData) {
+		super(
+			{
+				eventType: RolesAssigned.EVENT_TYPE,
+				specVersion: RolesAssigned.SPEC_VERSION,
+				source: SOURCE,
+				subject: DomainEvent.subject(APP, 'user', data.userId),
+				messageGroup: DomainEvent.messageGroup(APP, 'user', data.userId),
+			},
+			ctx,
+			data,
+		);
+	}
+}
+
+// -----------------------------------------------------------------------------
+// ClientAccessGranted
+// -----------------------------------------------------------------------------
+
+export interface ClientAccessGrantedData {
+	readonly userId: string;
+	readonly email: string;
+	readonly clientId: string;
+	readonly [key: string]: unknown;
+}
+
+export class ClientAccessGranted extends BaseDomainEvent<ClientAccessGrantedData> {
+	static readonly EVENT_TYPE = DomainEvent.eventType(APP, DOMAIN, 'user', 'client-access-granted');
+	static readonly SPEC_VERSION = '1.0';
+
+	constructor(ctx: ExecutionContext, data: ClientAccessGrantedData) {
+		super(
+			{
+				eventType: ClientAccessGranted.EVENT_TYPE,
+				specVersion: ClientAccessGranted.SPEC_VERSION,
+				source: SOURCE,
+				subject: DomainEvent.subject(APP, 'user', data.userId),
+				messageGroup: DomainEvent.messageGroup(APP, 'user', data.userId),
+			},
+			ctx,
+			data,
+		);
+	}
+}
+
+// -----------------------------------------------------------------------------
+// ClientAccessRevoked
+// -----------------------------------------------------------------------------
+
+export interface ClientAccessRevokedData {
+	readonly userId: string;
+	readonly email: string;
+	readonly clientId: string;
+	readonly [key: string]: unknown;
+}
+
+export class ClientAccessRevoked extends BaseDomainEvent<ClientAccessRevokedData> {
+	static readonly EVENT_TYPE = DomainEvent.eventType(APP, DOMAIN, 'user', 'client-access-revoked');
+	static readonly SPEC_VERSION = '1.0';
+
+	constructor(ctx: ExecutionContext, data: ClientAccessRevokedData) {
+		super(
+			{
+				eventType: ClientAccessRevoked.EVENT_TYPE,
+				specVersion: ClientAccessRevoked.SPEC_VERSION,
+				source: SOURCE,
+				subject: DomainEvent.subject(APP, 'user', data.userId),
+				messageGroup: DomainEvent.messageGroup(APP, 'user', data.userId),
+			},
+			ctx,
+			data,
+		);
+	}
+}
